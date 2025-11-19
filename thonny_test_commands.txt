@@ -1,0 +1,42 @@
+# COPY AND PASTE THESE COMMANDS INTO THONNY REPL AFTER UPLOADING
+
+# Step 1: Test import
+from motor_control import MotorController
+
+# Step 2: Create motor controller
+motor = MotorController()
+print("Motor controller created successfully!")
+
+# Step 3: Check configuration
+print(f"Encoder CPR: {motor.CPR}")
+print(f"Gear ratio: {motor.gear_ratio}")
+print(f"Counts per revolution: {motor.counts_per_output_rev}")
+
+# Step 4: Test encoder (rotate motor manually)
+print("Rotate motor 1 turn clockwise, then enter:")
+start_count = motor.encoder_count
+print(f"Started at: {start_count}")
+
+# After rotating: (paste this)
+end_count = motor.encoder_count
+print(f"Ended at: {end_count}")
+print(f"Change: {end_count - start_count} (should be ~1920)")
+
+# Step 5: Test motor movement (CAREFUL!)
+motor.set_motor_speed(5)  # Very slow
+import time
+time.sleep(3)
+print(f"Speed reading: {motor.get_velocity_rpm()} RPM")
+motor.stop_motor()
+print("Motor test complete!")
+
+# Step 6: Full test suite
+exec(open('test_motor.py').read())
+
+# Step 7: Interactive control
+exec(open('motor_control.py').read())
+# Now you can type commands like:
+# vel 30
+# pos 90
+# status
+# stop

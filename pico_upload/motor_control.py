@@ -24,12 +24,13 @@ import sys
 class MotorController:
     def __init__(self):
         # Encoder pins (interrupt capable)
-        self.encoder_a = Pin(8, Pin.IN, Pin.PULL_UP)  # GP8, Pico pin 9 (white wire)
-        self.encoder_b = Pin(9, Pin.IN, Pin.PULL_UP)  # GP9, Pico pin 10 (yellow wire)
+        self.encoder_a = Pin(6, Pin.IN, Pin.PULL_UP)  # GP6, Pico pin 9 (white wire)
+        self.encoder_b = Pin(7, Pin.IN, Pin.PULL_UP)  # GP7, Pico pin 10 (yellow wire)
 
-        # Motor control pins
-        self.motor_ena = PWM(Pin(0))  # GP0, Pico pin 1 - PWM for speed
-        self.motor_in1 = Pin(1, Pin.OUT)  # GP1, Pico pin 2 - Direction
+        # Motor control pins for dual H-bridge controller
+        self.motor_ena = PWM(Pin(0))  # GP0, Pico pin 1 - PWM for speed (ENA)
+        self.motor_in1 = Pin(1, Pin.OUT)  # GP1, Pico pin 2 - Direction control (IN1)
+        self.motor_in2 = Pin(2, Pin.OUT)  # GP2, Pico pin 4 - Direction control (IN2)
 
         # Encoder configuration
         self.CPR = 64  # Counts per revolution (motor shaft)
@@ -58,6 +59,9 @@ class MotorController:
         self.kd = 0.05
         self.integral_error = 0.0
         self.last_position_error = 0.0
+        
+        # Haptic feedback
+        self.haptic_brake_percent = 0.0  # 0.0 to 1.0 (0% to 100% braking)
 
         # PWM configuration
         self.motor_ena.freq(1000)  # 1kHz PWM frequency
@@ -112,20 +116,42 @@ class MotorController:
         """Set motor speed in RPM (positive = one direction, negative = other)"""
         if abs(speed_rpm) < 0.1:  # Stop threshold
             self.motor_ena.duty_u16(0)
+            self.motor_in1.value(0)
+            self.motor_in2.value(0)
             return
 
-        # Direction
+        # Direction control for dual H-bridge
+        # Forward: IN1=HIGH, IN2=LOW
+        # Reverse: IN1=LOW, IN2=HIGH
         if speed_rpm > 0:
             self.motor_in1.value(1)
+            self.motor_in2.value(0)
         else:
             self.motor_in1.value(0)
+            self.motor_in2.value(1)
 
         # Speed (scale RPM to PWM duty cycle)
         # Assuming max RPM is around 100-200 for geared motor, adjust as needed
         max_rpm = 150.0
         duty_percent = min(abs(speed_rpm) / max_rpm, 1.0)
+        
+        # Apply haptic feedback braking (reduce effective speed)
+        if self.haptic_brake_percent > 0:
+            duty_percent = duty_percent * (1.0 - self.haptic_brake_percent)
+        
         duty_value = int(self.min_pwm + (self.max_pwm - self.min_pwm) * duty_percent)
         self.motor_ena.duty_u16(duty_value)
+        
+        # If haptic feedback is active, apply braking by shorting motor leads
+        # This creates resistance/back-EMF braking
+        if self.haptic_brake_percent > 0.5:
+            # Strong braking: set both IN1 and IN2 HIGH to brake
+            # This creates a short circuit through the motor, generating resistance
+            self.motor_in1.value(1)
+            self.motor_in2.value(1)
+            # Reduce PWM to prevent overheating
+            brake_duty = int(self.min_pwm + (self.max_pwm - self.min_pwm) * (1.0 - self.haptic_brake_percent) * 0.3)
+            self.motor_ena.duty_u16(brake_duty)
 
     def position_control(self):
         """PID position control"""
@@ -154,6 +180,8 @@ class MotorController:
     def stop_motor(self):
         """Stop the motor"""
         self.motor_ena.duty_u16(0)
+        self.motor_in1.value(0)
+        self.motor_in2.value(0)
         self.target_velocity = 0.0
 
     def zero_position(self):
@@ -162,6 +190,17 @@ class MotorController:
         self.integral_error = 0.0
         self.last_position_error = 0.0
         print("Position zeroed")
+
+    def set_haptic_feedback(self, brake_percent):
+        """Set haptic feedback braking level (0.0 to 1.0)
+        
+        Args:
+            brake_percent: Braking level from 0.0 (no braking) to 1.0 (full braking)
+        """
+        self.haptic_brake_percent = max(0.0, min(1.0, brake_percent))
+        # Apply braking immediately if motor is running
+        if abs(self.target_velocity) > 0.1:
+            self.set_motor_speed(self.target_velocity)
 
     def set_pid_gains(self, kp, ki, kd):
         """Set PID gains for position control"""
