@@ -59,7 +59,7 @@ class MotorController:
         self.kd = 0.05
         self.integral_error = 0.0
         self.last_position_error = 0.0
-        
+
         # Haptic feedback
         self.haptic_brake_percent = 0.0  # 0.0 to 1.0 (0% to 100% braking)
 
@@ -67,6 +67,8 @@ class MotorController:
         self.motor_ena.freq(1000)  # 1kHz PWM frequency
         self.max_pwm = 65535
         self.min_pwm = 1000  # Minimum PWM to overcome motor deadband
+        # Limit the braking duty cycle to avoid overheating while keeping it proportional
+        self.max_brake_scale = 0.6
 
         # Setup encoder interrupts
         self.encoder_a.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=self.encoder_callback)
@@ -114,6 +116,13 @@ class MotorController:
 
     def set_motor_speed(self, speed_rpm):
         """Set motor speed in RPM (positive = one direction, negative = other)"""
+        # Update target velocity tracker so haptic logic knows the current command
+        self.target_velocity = speed_rpm
+
+        # If haptics are active, braking takes priority over driving to create resistance
+        if self._apply_haptic_brake():
+            return
+
         if abs(speed_rpm) < 0.1:  # Stop threshold
             self.motor_ena.duty_u16(0)
             self.motor_in1.value(0)
@@ -134,24 +143,28 @@ class MotorController:
         # Assuming max RPM is around 100-200 for geared motor, adjust as needed
         max_rpm = 150.0
         duty_percent = min(abs(speed_rpm) / max_rpm, 1.0)
-        
-        # Apply haptic feedback braking (reduce effective speed)
-        if self.haptic_brake_percent > 0:
-            duty_percent = duty_percent * (1.0 - self.haptic_brake_percent)
-        
+
         duty_value = int(self.min_pwm + (self.max_pwm - self.min_pwm) * duty_percent)
         self.motor_ena.duty_u16(duty_value)
-        
-        # If haptic feedback is active, apply braking by shorting motor leads
-        # This creates resistance/back-EMF braking
-        if self.haptic_brake_percent > 0.5:
-            # Strong braking: set both IN1 and IN2 HIGH to brake
-            # This creates a short circuit through the motor, generating resistance
-            self.motor_in1.value(1)
-            self.motor_in2.value(1)
-            # Reduce PWM to prevent overheating
-            brake_duty = int(self.min_pwm + (self.max_pwm - self.min_pwm) * (1.0 - self.haptic_brake_percent) * 0.3)
-            self.motor_ena.duty_u16(brake_duty)
+
+    def _apply_haptic_brake(self):
+        """Apply electromagnetic braking proportional to haptic_brake_percent.
+
+        Returns:
+            bool: True if braking was applied, False otherwise.
+        """
+        if self.haptic_brake_percent <= 0:
+            return False
+
+        # Short the motor leads to create resistive torque
+        self.motor_in1.value(1)
+        self.motor_in2.value(1)
+
+        # Higher brake percent -> higher duty, capped for safety
+        brake_strength = min(self.haptic_brake_percent, 1.0) * self.max_brake_scale
+        brake_duty = int(self.min_pwm + (self.max_pwm - self.min_pwm) * brake_strength)
+        self.motor_ena.duty_u16(brake_duty)
+        return True
 
     def position_control(self):
         """PID position control"""
@@ -193,14 +206,20 @@ class MotorController:
 
     def set_haptic_feedback(self, brake_percent):
         """Set haptic feedback braking level (0.0 to 1.0)
-        
+
         Args:
             brake_percent: Braking level from 0.0 (no braking) to 1.0 (full braking)
         """
         self.haptic_brake_percent = max(0.0, min(1.0, brake_percent))
-        # Apply braking immediately if motor is running
-        if abs(self.target_velocity) > 0.1:
-            self.set_motor_speed(self.target_velocity)
+
+        # Apply braking immediately
+        if self._apply_haptic_brake():
+            return
+
+        # No braking - coast freely
+        self.motor_in1.value(0)
+        self.motor_in2.value(0)
+        self.motor_ena.duty_u16(0)
 
     def set_pid_gains(self, kp, ki, kd):
         """Set PID gains for position control"""

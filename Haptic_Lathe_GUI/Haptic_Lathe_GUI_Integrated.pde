@@ -582,6 +582,7 @@ void drawMainView() {
   float stockRightX = chuckX + stockLenPx;
   float stockBottomY = centerY + stockHPx / 2;
   float stockTopY    = centerY - stockHPx / 2;
+  float stockRadiusPx = stockHPx / 2.0;  // Define radius early for use in tool positioning
 
   fill(180);
   stroke(0);
@@ -613,8 +614,8 @@ void drawMainView() {
       // Z-axis (axial): motor controls Z movement along stock
       float zMovement = map(physicalHandlePosition, -movementRange/2, movementRange/2, -stockLenPx*0.5, stockLenPx*0.5);
       toolTipXpx = chuckX + stockLenPx * 0.50 + zMovement * movementScale;
-      // X position stays at default (radial position)
-      toolTipYpx = stockBottomY + 10;
+      // X position: OUTSIDE stock by default (below the bottom edge)
+      toolTipYpx = centerY + stockRadiusPx + 20;  // 20 pixels OUTSIDE (below) the stock
     } else {
       // X-axis (radial): motor controls X movement (in/out from center)
       float xMovement = map(physicalHandlePosition, -movementRange/2, movementRange/2, -stockHPx*0.4, stockHPx*0.4);
@@ -622,8 +623,9 @@ void drawMainView() {
       toolTipYpx = centerY - xMovement * movementScale;  // Y decreases as X increases (radial out)
     }
   } else {
+    // Default position when not using physical input - OUTSIDE stock
     toolTipXpx = chuckX + stockLenPx * 0.50;
-    toolTipYpx = stockBottomY + 10;
+    toolTipYpx = centerY + stockRadiusPx + 20;  // OUTSIDE the stock (air cutting)
   }
 
   // --- Orange cutting tip (triangle) pointing upward ---
@@ -666,7 +668,6 @@ void drawMainView() {
   
   // ----- Collision detection -----
   // Check if tool tip intersects with stock
-  float stockRadiusPx = stockHPx / 2.0;
   float toolTipDistFromCenter = abs(toolTipYpx - centerY);
   
   // Collision if tool tip is inside stock radius
@@ -678,7 +679,7 @@ void drawMainView() {
     float penetration = stockRadiusPx - toolTipDistFromCenter;
     collisionForce = map(penetration, 0, stockRadiusPx, 0, 100);  // 0-100 force scale
     
-    // Send haptic feedback to motor
+    // Send haptic feedback to motor (deeper cut = more resistance)
     if (bridgeConnected && !wasColliding) {
       // Just started colliding - send haptic feedback
       sendToBridge("{\"type\":\"haptic_feedback\",\"force\":" + collisionForce + ",\"active\":true}");
@@ -687,10 +688,14 @@ void drawMainView() {
       // Update haptic feedback while colliding
       sendToBridge("{\"type\":\"haptic_feedback\",\"force\":" + collisionForce + ",\"active\":true}");
     }
-  } else if (wasColliding && bridgeConnected) {
-    // Just stopped colliding - disable haptic feedback
-    sendToBridge("{\"type\":\"haptic_feedback\",\"force\":0,\"active\":false}");
-    println("✅ Collision cleared");
+  } else {
+    // Not colliding - air cutting should have NO resistance
+    if (bridgeConnected) {
+      sendToBridge("{\"type\":\"haptic_feedback\",\"force\":0,\"active\":false}");
+      if (wasColliding) {
+        println("✅ Collision cleared - air cutting, no resistance");
+      }
+    }
   }
   
   // Visual feedback for collision
