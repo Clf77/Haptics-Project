@@ -1,3 +1,4 @@
+
 // Haptic Lathe Simulator GUI - Integrated with Physical Motor
 // - File-based communication with Python bridge
 // - Handle wheel position input from motor encoder
@@ -98,7 +99,6 @@ float zPosIn = 0;
 // Collision detection
 boolean toolCollision = false;
 float collisionForce = 0.0;  // Force magnitude when collision detected
-float currentForce = 0.0;    // Current force being applied [N]
 
 void setup() {
   size(1280, 720);
@@ -611,22 +611,17 @@ void drawMainView() {
     float movementRange = 360.0;  // Full rotation range
     float movementScale = 1.0;     // Scale factor for movement sensitivity
     
-    // CRITICAL: Tool MUST start OUTSIDE the stock (air cutting position)
-    float startingOffset = 20;  // Pixels outside stock surface
-    
     if (activeAxis.equals("Z")) {
       // Z-axis (axial): motor controls Z movement along stock
       float zMovement = map(physicalHandlePosition, -movementRange/2, movementRange/2, -stockLenPx*0.5, stockLenPx*0.5);
       toolTipXpx = chuckX + stockLenPx * 0.50 + zMovement * movementScale;
-      // X position: ALWAYS start OUTSIDE stock (below the bottom edge)
-      toolTipYpx = centerY + stockRadiusPx + startingOffset;  // OUTSIDE (below) the stock
+      // X position: OUTSIDE stock by default (below the bottom edge)
+      toolTipYpx = centerY + stockRadiusPx + 20;  // 20 pixels OUTSIDE (below) the stock
     } else {
       // X-axis (radial): motor controls X movement (in/out from center)
-      // Map encoder to radial movement, but ALWAYS start OUTSIDE the stock
-      float xMovement = map(physicalHandlePosition, -movementRange/2, movementRange/2, 0, stockHPx*0.8);
+      float xMovement = map(physicalHandlePosition, -movementRange/2, movementRange/2, -stockHPx*0.4, stockHPx*0.4);
       toolTipXpx = chuckX + stockLenPx * 0.50;  // Z stays at center
-      // Start OUTSIDE stock and move IN as handle turns
-      toolTipYpx = (centerY + stockRadiusPx + startingOffset) - xMovement * movementScale;
+      toolTipYpx = centerY - xMovement * movementScale;  // Y decreases as X increases (radial out)
     }
   } else {
     // Default position when not using physical input - OUTSIDE stock
@@ -672,57 +667,34 @@ void drawMainView() {
   xPosIn = rawXIn - xZeroOffsetIn;
   zPosIn = rawZIn - zZeroOffsetIn;
   
-  // ----- Virtual Wall Force Rendering (Hapkit-style) -----
-  // Calculate distance from tool tip to stock surface (radial direction)
+  // ----- Collision detection -----
+  // Check if tool tip intersects with stock
   float toolTipDistFromCenter = abs(toolTipYpx - centerY);
-  // stockRadiusPx already defined above on line 586
-
-  // Convert to physical units for force calculation (meters)
-  float distFromSurfacePx = toolTipDistFromCenter - stockRadiusPx;
-  float xh = distFromSurfacePx / pxPerIn * 0.0254;  // Convert to meters (1 inch = 0.0254m)
-
-  // Virtual wall parameters
-  float wall_position = 0.0;  // Wall is at stock surface (0mm penetration)
-  float k_wall = 100000.0;    // Wall stiffness [N/m] - ultra high stiffness (1000 N/cm)
-
-  // Calculate force using Hapkit virtual wall algorithm
-  float force = 0.0;
-  boolean wasColliding = toolCollision;
   
-  if (xh < wall_position) {
-    // Penetrating virtual wall (xh is negative when inside stock)
-    float penetration = abs(xh);  // Positive penetration depth
-    force = k_wall * penetration;  // Positive force pushes back
+  // Collision if tool tip is inside stock radius
+  boolean wasColliding = toolCollision;
+  toolCollision = (toolTipDistFromCenter < stockRadiusPx);
+  
+  // Calculate collision force (proportional to penetration depth)
+  if (toolCollision) {
+    float penetration = stockRadiusPx - toolTipDistFromCenter;
+    collisionForce = map(penetration, 0, stockRadiusPx, 0, 100);  // 0-100 force scale
     
-    // Cap force at maximum
-    force = min(force, 50.0);  // Max 50N
-    
-    collisionForce = map(force, 0, 50, 0, 100);  // Scale to 0-100 range
-    currentForce = force;  // Store actual force in Newtons
-    toolCollision = true;
-    
-    println("🔴 COLLISION: xh=" + xh + "m, penetration=" + penetration + "m, force=" + force + "N, collisionForce=" + collisionForce);
-  } else {
-    // Outside virtual wall - no force
-    force = 0.0;
-    collisionForce = 0.0;
-    currentForce = 0.0;
-    toolCollision = false;
-  }
-
-  // Send haptic feedback to motor
-  if (bridgeConnected) {
-    if (toolCollision) {
-      // Inside virtual wall - send force value
+    // Send haptic feedback to motor (deeper cut = more resistance)
+    if (bridgeConnected && !wasColliding) {
+      // Just started colliding - send haptic feedback
       sendToBridge("{\"type\":\"haptic_feedback\",\"force\":" + collisionForce + ",\"active\":true}");
-      if (!wasColliding) {
-        println("🧱 VIRTUAL WALL ENTERED: Force = " + force + "N");
-      }
-    } else {
-      // Outside virtual wall - no force
+      println("🔴 COLLISION DETECTED! Force: " + collisionForce);
+    } else if (bridgeConnected) {
+      // Update haptic feedback while colliding
+      sendToBridge("{\"type\":\"haptic_feedback\",\"force\":" + collisionForce + ",\"active\":true}");
+    }
+  } else {
+    // Not colliding - air cutting should have NO resistance
+    if (bridgeConnected) {
       sendToBridge("{\"type\":\"haptic_feedback\",\"force\":0,\"active\":false}");
       if (wasColliding) {
-        println("✅ Virtual wall exited - no resistance");
+        println("✅ Collision cleared - air cutting, no resistance");
       }
     }
   }
@@ -901,7 +873,7 @@ void drawRightPanel() {
   textSize(14);
   text("X Position:   " + nfp(xPosIn, 1, 3) + " in", innerX + 10, lineY); lineY += lineH;
   text("Z Position:   " + nfp(zPosIn, 1, 3) + " in", innerX + 10, lineY); lineY += lineH;
-  text("Tool Load Fx: " + nfp(currentForce, 1, 1) + " N", innerX + 10, lineY); lineY += lineH;
+  text("Tool Load Fx: 0.0 N",     innerX + 10, lineY); lineY += lineH;
   text("Tool Load Fz: 0.0 N",     innerX + 10, lineY); lineY += lineH;
 
   innerY += 150;

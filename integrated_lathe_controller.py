@@ -206,10 +206,22 @@ class LatheController:
             self.motor_controller.stop_motor()
             return "Motor stopped"
 
+        elif cmd == "spring_wall" and len(parts) >= 2:
+            try:
+                force_val = float(parts[1])
+                wall_flag = float(parts[2]) if len(parts) >= 3 else 1.0
+                self.motor_controller.set_spring_wall(force_val, wall_flag)
+                return f"Virtual wall {'engaged' if force_val > 0 and wall_flag != 0 else 'released'}"
+            except ValueError:
+                return "Invalid spring_wall values"
+
         elif cmd == "status":
             pos = self.motor_controller.get_position_degrees()
             vel = self.motor_controller.get_velocity_rpm()
-            return ".2f"
+            status = f"Position: {pos:.2f} degrees, Velocity: {vel:.2f} RPM, Mode: {self.motor_controller.control_mode}"
+            if getattr(self.motor_controller, "wall_engaged", False):
+                status += f", Wall @ {self.motor_controller.wall_contact_position_deg:.2f}°"
+            return status
 
         return "Unknown command"
 
@@ -267,20 +279,23 @@ class LatheController:
                 print(f"📐 Active axis set to: {axis}")
 
             elif cmd_type == "haptic_feedback":
-                # Handle haptic feedback commands
+                # Handle haptic feedback commands with virtual wall support
                 self.haptic_active = data.get("active", False)
                 self.haptic_force = data.get("force", 0.0)
                 print(f"🖐️  Haptic feedback: {'ON' if self.haptic_active else 'OFF'}, Force: {self.haptic_force:.1f}")
-                
+
                 if self.haptic_active and self.pico_serial:
-                    # Apply braking/resistance proportional to force
-                    # Higher force = more braking
-                    brake_percent = min(self.haptic_force / 100.0, 1.0)
-                    # Send haptic command to Pico
-                    self.send_to_pico(f"haptic {brake_percent}")
+                    # GUI sends force as 0-100 representing penetration into virtual wall
+                    # Higher force = deeper penetration = stronger pushback needed
+                    physical_force = (self.haptic_force / 100.0) * 50.0  # 0-50N range
+                    wall_active = 1 if physical_force > 0 else 0
+
+                    # Engage the Pico's encoder-backed virtual wall (second arg is an active flag)
+                    self.send_to_pico(f"spring_wall {physical_force:.2f} {wall_active}")
+                    print(f"🧱 Virtual wall (hold): GUI_force={self.haptic_force:.1f}, Physical_force={physical_force:.2f}N, active={bool(wall_active)}")
                 elif not self.haptic_active and self.pico_serial:
                     # Disable haptic feedback
-                    self.send_to_pico("haptic 0")
+                    self.send_to_pico("spring_wall 0 0")
 
         except json.JSONDecodeError as e:
             print(f"Invalid JSON command: {e}")
@@ -501,7 +516,7 @@ def main():
     print("Haptic Lathe Controller Starting...")
 
     # Use file-based communication for GUI and try different serial ports for Pico
-    pico_ports = ["/dev/cu.usbmodem2101", "/dev/tty.usbmodem2101", "/dev/ttyACM1", "/dev/ttyUSB1", "COM5", "COM6"]
+    pico_ports = ["/dev/cu.usbmodem11401", "/dev/cu.usbmodem2101", "/dev/tty.usbmodem2101", "/dev/ttyACM1", "/dev/ttyUSB1", "COM5", "COM6"]
 
     controller = None
 
