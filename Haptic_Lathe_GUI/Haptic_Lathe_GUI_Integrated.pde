@@ -100,6 +100,12 @@ boolean toolCollision = false;
 float collisionForce = 0.0;  // Force magnitude when collision detected
 float currentForce = 0.0;    // Current force being applied [N]
 
+// Relative Positioning State
+float currentToolX = 0;      // Current X position (pixels)
+float currentToolZ = 0;      // Current Z position (pixels)
+float lastHandlePosition = 0; // Last read encoder position
+boolean firstBridgeUpdate = true; // Flag to sync handle on first update
+
 void setup() {
   size(1280, 720);
   smooth();
@@ -126,6 +132,20 @@ void setup() {
   if (bridgeConnected) {
     sendToBridge("{\"type\":\"status_request\"}");
   }
+  
+  // Initialize Tool Position (Safe Home)
+  // Center of workspace X, below stock Y
+  float centerY = (headerH + padding + 160 + padding) + (H - headerH - footerH - 160 - 2*padding) * 0.40;
+  float chuckX  = leftPanelW + padding + 100;
+  float stockLenPx = stockLengthIn * pxPerIn;
+  float stockHPx   = stockDiameterIn * pxPerIn;
+  float stockRadiusPx = stockHPx / 2.0;
+  
+  // Start Z at center of stock
+  currentToolZ = chuckX + stockLenPx * 0.50;
+  
+  // Start X well outside the stock (below it)
+  currentToolX = centerY + stockRadiusPx + 40; // 40px clearance
 }
 
 // Check if Python bridge is running
@@ -606,32 +626,40 @@ void drawMainView() {
 
   // Update tool position based on input mode and active axis
   if (usePhysicalInput && bridgeConnected) {
-    // Convert physical handle position to tool coordinates based on active axis
-    // Map encoder position (degrees) to movement
-    float movementRange = 360.0;  // Full rotation range
-    float movementScale = 1.0;     // Scale factor for movement sensitivity
-    
-    // CRITICAL: Tool MUST start OUTSIDE the stock (air cutting position)
-    float startingOffset = 20;  // Pixels outside stock surface
-    
-    if (activeAxis.equals("Z")) {
-      // Z-axis (axial): motor controls Z movement along stock
-      float zMovement = map(physicalHandlePosition, -movementRange/2, movementRange/2, -stockLenPx*0.5, stockLenPx*0.5);
-      toolTipXpx = chuckX + stockLenPx * 0.50 + zMovement * movementScale;
-      // X position: ALWAYS start OUTSIDE stock (below the bottom edge)
-      toolTipYpx = centerY + stockRadiusPx + startingOffset;  // OUTSIDE (below) the stock
+    // Relative positioning logic
+    if (firstBridgeUpdate) {
+      // First update - just sync the handle position
+      lastHandlePosition = physicalHandlePosition;
+      firstBridgeUpdate = false;
     } else {
-      // X-axis (radial): motor controls X movement (in/out from center)
-      // Map encoder to radial movement, but ALWAYS start OUTSIDE the stock
-      float xMovement = map(physicalHandlePosition, -movementRange/2, movementRange/2, 0, stockHPx*0.8);
-      toolTipXpx = chuckX + stockLenPx * 0.50;  // Z stays at center
-      // Start OUTSIDE stock and move IN as handle turns
-      toolTipYpx = (centerY + stockRadiusPx + startingOffset) - xMovement * movementScale;
+      // Calculate delta
+      float delta = physicalHandlePosition - lastHandlePosition;
+      lastHandlePosition = physicalHandlePosition;
+      
+      // Apply movement scale (sensitivity)
+      float movementScale = 1.0; 
+      
+      if (activeAxis.equals("Z")) {
+        // Z-axis (axial): Move tool along Z
+        // Positive delta = Move Right (Positive Z)
+        currentToolZ += delta * movementScale;
+      } else {
+        // X-axis (radial): Move tool in/out
+        // Positive delta (CW) = Move IN (Negative X / smaller diameter)
+        // Negative delta (CCW) = Move OUT (Positive X / larger diameter)
+        currentToolX -= delta * movementScale;
+      }
     }
+    
+    // Update display coordinates from logical coordinates
+    toolTipXpx = currentToolZ;
+    toolTipYpx = currentToolX;
+    
   } else {
     // Default position when not using physical input - OUTSIDE stock
-    toolTipXpx = chuckX + stockLenPx * 0.50;
-    toolTipYpx = centerY + stockRadiusPx + 20;  // OUTSIDE the stock (air cutting)
+    // Or just keep last known position
+    toolTipXpx = currentToolZ;
+    toolTipYpx = currentToolX;
   }
 
   // --- Orange cutting tip (triangle) pointing upward ---
@@ -710,20 +738,16 @@ void drawMainView() {
     toolCollision = false;
   }
 
-  // Send haptic feedback to motor
+  // Send haptic feedback to motor (ONLY ON STATE CHANGE)
   if (bridgeConnected) {
-    if (toolCollision) {
-      // Inside virtual wall - send force value
+    if (toolCollision && !wasColliding) {
+      // Just entered virtual wall - engage
       sendToBridge("{\"type\":\"haptic_feedback\",\"force\":" + collisionForce + ",\"active\":true}");
-      if (!wasColliding) {
-        println("🧱 VIRTUAL WALL ENTERED: Force = " + force + "N");
-      }
-    } else {
-      // Outside virtual wall - no force
+      println("🧱 VIRTUAL WALL ENTERED: Force = " + force + "N");
+    } else if (!toolCollision && wasColliding) {
+      // Just exited virtual wall - release
       sendToBridge("{\"type\":\"haptic_feedback\",\"force\":0,\"active\":false}");
-      if (wasColliding) {
-        println("✅ Virtual wall exited - no resistance");
-      }
+      println("✅ Virtual wall exited - no resistance");
     }
   }
   

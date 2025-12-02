@@ -83,13 +83,19 @@ class IntegratedLauncher:
         gui_port = None
         pico_port = None
 
+        # Improved port detection for macOS
         for port in available_ports:
-            # Simple heuristics - adjust based on your setup
-            if "ACM" in port or "USB" in port:
+            # Check for common Pico/Arduino port names
+            if "usbmodem" in port or "ACM" in port or "USB" in port:
                 if not gui_port:
                     gui_port = port
                 elif not pico_port:
                     pico_port = port
+        
+        # If only one port found, assume it's the Pico (since GUI is file-based now)
+        if gui_port and not pico_port:
+            pico_port = gui_port
+            gui_port = None
 
         return gui_port, pico_port
 
@@ -125,7 +131,8 @@ class IntegratedLauncher:
         """Start the Processing GUI"""
         print("Starting Processing GUI...")
 
-        sketch_path = "Haptic_Lathe_GUI_Integrated.pde"
+        # Correct path to sketch
+        sketch_path = os.path.join("Haptic_Lathe_GUI", "Haptic_Lathe_GUI_Integrated.pde")
 
         if not os.path.exists(sketch_path):
             print(f"✗ Sketch file not found: {sketch_path}")
@@ -207,9 +214,13 @@ class IntegratedLauncher:
                 if self.controller_process and self.controller_process.poll() is not None:
                     print("Bridge controller process ended")
                     self.running = False
-                if self.processing_process and self.processing_process.poll() is not None:
-                    print("Processing GUI process ended")
-                    self.running = False
+                
+                # On macOS with 'open', the process ends immediately, so we don't monitor it
+                # Only monitor if we're not using 'open' (which we can infer or set a flag)
+                # For now, we'll just disable strict monitoring of the GUI process to avoid premature shutdown
+                # if self.processing_process and self.processing_process.poll() is not None:
+                #     print("Processing GUI process ended")
+                #     self.running = False
 
         except KeyboardInterrupt:
             print("\nShutdown requested by user")
