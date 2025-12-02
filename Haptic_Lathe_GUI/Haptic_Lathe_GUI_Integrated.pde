@@ -701,25 +701,54 @@ void drawMainView() {
   zPosIn = rawZIn - zZeroOffsetIn;
   
   // ----- Virtual Wall Force Rendering (Hapkit-style) -----
-  // Calculate distance from tool tip to stock surface (radial direction)
+  // ----- Virtual Wall Force Rendering (Hapkit-style) -----
+  // Calculate distance from tool tip to stock surface
   float toolTipDistFromCenter = abs(toolTipYpx - centerY);
-  // stockRadiusPx already defined above on line 586
+  // stockRadiusPx already defined above
+  
+  float xh = 0.0; // Penetration in meters
+  boolean checkCollision = false;
 
-  // Convert to physical units for force calculation (meters)
-  float distFromSurfacePx = toolTipDistFromCenter - stockRadiusPx;
-  float xh = distFromSurfacePx / pxPerIn * 0.0254;  // Convert to meters (1 inch = 0.0254m)
+  if (activeAxis.equals("Z")) {
+    // Axial Collision (Facing)
+    // Check if tool is within the diameter of the stock
+    if (toolTipDistFromCenter < stockRadiusPx) {
+      // Check if tool tip has passed the face of the stock (moving Left)
+      // stockRightX is the face. Tool comes from Right.
+      float distFromFacePx = toolTipXpx - stockRightX;
+      
+      if (distFromFacePx < 0) {
+        // Penetrating face
+        xh = abs(distFromFacePx) / pxPerIn * 0.0254;
+        checkCollision = true;
+      }
+    }
+  } else {
+    // Radial Collision (Turning)
+    // Check if tool is within the length of the stock
+    if (toolTipXpx < stockRightX && toolTipXpx > chuckX) {
+      // Check if tool tip is inside the diameter
+      float distFromSurfacePx = toolTipDistFromCenter - stockRadiusPx;
+      
+      if (distFromSurfacePx < 0) {
+        // Penetrating diameter
+        xh = abs(distFromSurfacePx) / pxPerIn * 0.0254;
+        checkCollision = true;
+      }
+    }
+  }
 
   // Virtual wall parameters
-  float wall_position = 0.0;  // Wall is at stock surface (0mm penetration)
-  float k_wall = 100000.0;    // Wall stiffness [N/m] - ultra high stiffness (1000 N/cm)
+  float wall_position = 0.0;  // Wall is at surface (0mm penetration)
+  float k_wall = 100000.0;    // Wall stiffness [N/m]
 
   // Calculate force using Hapkit virtual wall algorithm
   float force = 0.0;
-  boolean wasColliding = toolCollision;
+  boolean wasColliding = toolCollision; // Capture previous state
   
-  if (xh < wall_position) {
-    // Penetrating virtual wall (xh is negative when inside stock)
-    float penetration = abs(xh);  // Positive penetration depth
+  if (checkCollision) {
+    // Penetrating virtual wall
+    float penetration = xh;  // Positive penetration depth
     force = k_wall * penetration;  // Positive force pushes back
     
     // Cap force at maximum
@@ -729,7 +758,7 @@ void drawMainView() {
     currentForce = force;  // Store actual force in Newtons
     toolCollision = true;
     
-    println("🔴 COLLISION: xh=" + xh + "m, penetration=" + penetration + "m, force=" + force + "N, collisionForce=" + collisionForce);
+    println("🔴 COLLISION (" + activeAxis + "): pen=" + (penetration*1000) + "mm, F=" + force + "N");
   } else {
     // Outside virtual wall - no force
     force = 0.0;
