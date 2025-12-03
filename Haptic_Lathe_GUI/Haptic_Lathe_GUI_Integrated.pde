@@ -484,10 +484,14 @@ void handleMotorControlClicks() {
 void keyPressed() {
   // ... existing key handling ...
 
-  // Emergency stop on spacebar
+  // Toggle Axis on Spacebar
   if (key == ' ') {
-    sendToBridge("{\"type\":\"emergency_stop\"}");
-    println("EMERGENCY STOP sent to controller");
+    if (activeAxis.equals("X")) {
+       activeAxis = "Z";
+    } else {
+       activeAxis = "X";
+    }
+    println("Active Axis Toggled to: " + activeAxis);
   }
 
   // Toggle between mouse and physical input
@@ -809,32 +813,68 @@ void drawMainView() {
         axialCollision = true;
         axialPenetration = abs(distFromFacePx) / pxPerIn * 0.0254;
         
-        // Cut if penetrating
-        if (abs(distFromFacePx) > 1.0) {
-           stockLengthIn -= 0.005; 
+        // Material Removal with Yield Buffer
+        float yieldBufferPx = 1.0;
+        float penPx = abs(distFromFacePx);
+        if (penPx > yieldBufferPx) {
+           // Cut material down, leaving yieldBufferPx
+           stockLengthIn -= (penPx - yieldBufferPx) / pxPerIn; 
            stockLenPx = stockLengthIn * pxPerIn;
            stockRightX = chuckX + stockLenPx;
         }
       }
     }
     
-    // 2. Check Radial (Turning)
-    if (toolTipXpx < stockRightX + collisionMargin && toolTipXpx > chuckX) {
-      int zIndex = int(toolTipXpx - chuckX);
-      if (zIndex >= 0 && zIndex < stockProfileLen) {
-        float currentRadius = stockProfile[zIndex];
-        float distFromSurface = toolTipDistFromCenter - currentRadius;
-        
-        if (distFromSurface < 0) {
+    // 2. Check Radial (Turning) - V-TOOL LOGIC
+    // Iterate over the tool's width to check for collisions with the V-shape
+    float toolHalfWidth = tipW / 2.0;
+    int startZ = int(toolTipXpx - toolHalfWidth - chuckX);
+    int endZ = int(toolTipXpx + toolHalfWidth - chuckX);
+    
+    // Clamp to stock bounds
+    startZ = max(0, startZ);
+    endZ = min(stockProfileLen - 1, endZ);
+    
+    float maxRadialPenetrationPx = 0;
+    
+    for (int z = startZ; z <= endZ; z++) {
+       // Calculate tool radius at this Z position (V-shape)
+       // Tool is a triangle with tip at toolTipXpx
+       float distFromTipX = abs((chuckX + z) - toolTipXpx);
+       
+       // Slope is determined by tipW and tipH. 
+       // tipH is height of the triangle, tipW is width at base? 
+       // Actually tipH is just the visual height. Let's assume 60 degree tool or similar.
+       // Based on drawing: triangle((x-w/2, y+h), (x+w/2, y+h), (x, y))
+       // So at tip (x), radius is toolTipYpx. At x +/- w/2, radius is toolTipYpx + tipH.
+       // Slope ratio = tipH / (tipW/2)
+       float slope = tipH / (tipW / 2.0);
+       // FIX: Flanks are FURTHER from center than tip, so ADD the slope offset
+       float toolRadiusAtZ = toolTipDistFromCenter + (distFromTipX * slope);
+       
+       // Check collision with stock
+       float currentStockRadius = stockProfile[z];
+       float distFromSurface = toolRadiusAtZ - currentStockRadius;
+       
+       if (distFromSurface < 0) {
           radialCollision = true;
-          radialPenetration = abs(distFromSurface) / pxPerIn * 0.0254;
+          float penPx = abs(distFromSurface);
           
-          // Cut if penetrating
-          if (abs(distFromSurface) > 1.0) {
-             stockProfile[zIndex] = toolTipDistFromCenter;
+          if (penPx > maxRadialPenetrationPx) {
+             maxRadialPenetrationPx = penPx;
           }
-        }
-      }
+          
+          // Material Removal with Yield Buffer
+          float yieldBufferPx = 1.0;
+          if (penPx > yieldBufferPx) {
+             // Cut material down, leaving yieldBufferPx
+             stockProfile[z] = toolRadiusAtZ + yieldBufferPx;
+          }
+       }
+    }
+    
+    if (radialCollision) {
+       radialPenetration = maxRadialPenetrationPx / pxPerIn * 0.0254;
     }
     
     // 3. Determine Haptic Feedback
