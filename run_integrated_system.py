@@ -132,7 +132,7 @@ class IntegratedLauncher:
         print("Starting Processing GUI...")
 
         # Correct path to sketch
-        sketch_path = os.path.join("Haptic_Lathe_GUI", "Haptic_Lathe_GUI_Integrated.pde")
+        sketch_path = os.path.join("Haptic_Lathe_GUI", "Haptic_Lathe_GUI.pde")
 
         if not os.path.exists(sketch_path):
             print(f"✗ Sketch file not found: {sketch_path}")
