@@ -111,5 +111,6 @@ while True:
     # Keep local mode tracker in sync with motor state
     control_mode = motor.control_mode
 
-    # Small delay to prevent busy waiting
-    time.sleep(0.001)
+    # Small delay to prevent busy waiting, but keep loop fast
+    # 100us sleep allows for >1kHz loop rate
+    time.sleep_us(100)

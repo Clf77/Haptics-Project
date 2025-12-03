@@ -32,145 +32,156 @@ except ImportError:
     MICROPYTHON_AVAILABLE = False
     MotorController = None
 
+import socket
+import select
+
 class LatheController:
     def __init__(self, pico_serial_port="/dev/cu.usbmodem2101"):
         self.pico_serial = None
         self.motor_controller = None
         self.pico_serial_port = pico_serial_port
 
-        # File-based communication with GUI
-        self.temp_dir = tempfile.gettempdir()
-        self.gui_commands_file = os.path.join(self.temp_dir, "lathe_gui_commands.json")
-        self.bridge_status_file = os.path.join(self.temp_dir, "lathe_bridge_status.json")
-
+        # TCP Socket Server for GUI communication
+        self.server_socket = None
+        self.client_socket = None
+        self.host = '127.0.0.1'
+        self.port = 5005
+        
         # Communication queues
         self.gui_to_bridge = queue.Queue()
         self.bridge_to_gui = queue.Queue()
         self.pico_to_bridge = queue.Queue()
 
         # Current state
-        self.current_mode = "manual"  # manual, facing, turning, boring
-        self.skill_level = "beginner"  # beginner, intermediate, advanced
+        self.current_mode = "manual"
+        self.skill_level = "beginner"
         self.emergency_stop = False
-        self.handle_wheel_position = 0.0  # degrees
-        self.tool_feed_rate = 0.0  # inches/minute
+        self.handle_wheel_position = 0.0
+        self.tool_feed_rate = 0.0
         self.spindle_rpm = 0.0
-        self.target_velocity = 50.0  # RPM (default motor speed)
-        self.active_axis = "Z"  # X or Z axis selection
+        self.target_velocity = 50.0
+        self.active_axis = "Z"
         self.haptic_active = False
         self.haptic_force = 0.0
 
         # Safety limits
-        self.max_velocity = 100.0  # RPM
-        self.max_position_error = 10.0  # degrees
-        self.heartbeat_timeout = 5.0  # seconds
+        self.max_velocity = 100.0
+        self.max_position_error = 10.0
+        self.heartbeat_timeout = 5.0
 
         # Initialize connections
         self.initialize_connections()
 
-    def initialize_connections(self):
-        """Initialize file-based communication with GUI and serial connection to Pico"""
-        # Create initial status file to signal we're running
-        try:
-            initial_status = {
-                "bridge_running": True,
-                "pico_connected": False,
-                "motor_position": 0.0,
-                "timestamp": time.time()
-            }
-            with open(self.bridge_status_file, 'w') as f:
-                json.dump(initial_status, f)
-            print(f"Bridge status file created: {self.bridge_status_file}")
-        except Exception as e:
-            print(f"Failed to create status file: {e}")
-
         # Try to connect to Pico motor controller
         try:
-            self.pico_serial = serial.Serial(self.pico_serial_port, 115200, timeout=1)
+            self.pico_serial = serial.Serial(self.pico_serial_port, 921600, timeout=0.1) # High speed baud
             print(f"Connected to Pico on {self.pico_serial_port}")
         except serial.SerialException as e:
             print(f"Failed to connect to Pico: {e}")
             self.pico_serial = None
 
-        # Initialize motor controller if running locally and MicroPython available
+    def initialize_connections(self):
+        """Initialize TCP server and serial connection to Pico"""
+        # Start TCP Server
+        try:
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1) # Disable Nagle's algorithm
+            self.server_socket.bind((self.host, self.port))
+            self.server_socket.listen(1)
+            self.server_socket.setblocking(False)
+            print(f"TCP Server listening on {self.host}:{self.port}")
+        except Exception as e:
+            print(f"Failed to start TCP server: {e}")
+
+        # ... (rest of method)
+
+    def run_control_loop(self):
+        """Main control loop with safety monitoring"""
+        last_status_time = 0
+        status_interval = 0.016  # ~60Hz updates to GUI (match screen refresh)
+        
+        last_pico_status_req = 0
+        pico_status_interval = 0.01  # 100Hz Pico polling (balanced load)
+        
+        last_safety_check = 0
+        safety_check_interval = 0.05  # 20Hz safety checks
+        
+        last_heartbeat_check = 0
+        heartbeat_check_interval = 1.0  # 1Hz heartbeat
+
+        # Initialize motor controller if running locally
         if not self.pico_serial and MICROPYTHON_AVAILABLE:
             try:
                 self.motor_controller = MotorController()
                 print("Using local motor controller")
             except Exception as e:
-                print(f"Failed to initialize local motor controller: {e}")
-        elif not self.pico_serial and not MICROPYTHON_AVAILABLE:
-            print("Running in desktop mode - no physical motor controller available")
-            self.motor_controller = None
+                print(f"Failed to initialize local controller: {e}")
 
-    def send_to_gui(self, message):
-        """Send JSON message to GUI via file"""
-        try:
-            with open(self.bridge_status_file, 'w') as f:
-                json.dump(message, f)
-        except Exception as e:
-            print(f"Error writing status to file: {e}")
+    def accept_gui_connection(self):
+        """Check for new GUI client connections"""
+        if self.server_socket:
+            try:
+                readable, _, _ = select.select([self.server_socket], [], [], 0)
+                if readable:
+                    client, addr = self.server_socket.accept()
+                    client.setblocking(False)
+                    self.client_socket = client
+                    print(f"GUI Connected from {addr}")
+            except Exception as e:
+                print(f"Error accepting connection: {e}")
 
     def read_gui_commands(self):
-        """Read commands from GUI via file"""
+        """Read commands from TCP socket"""
+        if not self.client_socket:
+            self.accept_gui_connection()
+            return None
+
         try:
-            if os.path.exists(self.gui_commands_file):
-                with open(self.gui_commands_file, 'r') as f:
-                    content = f.read().strip()
-                    if content:
-                        # Try to parse as JSON (could be string or object)
-                        data = json.loads(content)
-                        print(f"📥 Received GUI command: {data}")
-                        # Clear the file after reading
-                        os.remove(self.gui_commands_file)
-                        return data
-        except json.JSONDecodeError as e:
-            print(f"⚠️  JSON decode error: {e}, content: {content if 'content' in locals() else 'N/A'}")
+            # Check if data is available
+            readable, _, _ = select.select([self.client_socket], [], [], 0)
+            if readable:
+                data = self.client_socket.recv(4096)
+                if not data:
+                    print("GUI Disconnected")
+                    self.client_socket.close()
+                    self.client_socket = None
+                    return None
+                
+                # Split by newline in case multiple commands arrived
+                commands = data.decode().strip().split('\n')
+                last_valid_cmd = None
+                
+                for cmd_str in commands:
+                    if not cmd_str: continue
+                    try:
+                        cmd = json.loads(cmd_str)
+                        last_valid_cmd = cmd
+                    except json.JSONDecodeError:
+                        pass
+                
+                return last_valid_cmd
+                
         except Exception as e:
-            print(f"⚠️  Error reading GUI commands: {e}")
+            print(f"Socket receive error: {e}")
+            self.client_socket = None
+            return None
+            
         return None
 
     def send_to_pico(self, command):
         """Send command to Pico motor controller"""
         if self.pico_serial:
             try:
-                # Clear any pending input
-                self.pico_serial.reset_input_buffer()
-                
-                # Send command (use \r\n for MicroPython compatibility)
+                # Send command
                 cmd_bytes = (command + "\r\n").encode()
-                print(f"📤 Sending to Pico: {cmd_bytes}")
                 self.pico_serial.write(cmd_bytes)
-                self.pico_serial.flush()
                 
-                # Wait for response with timeout
-                import time
-                time.sleep(0.1)  # Give Pico time to process
+                # Don't wait for response here to avoid blocking the high-speed loop
+                # We read responses in the main loop
                 
-                # Read response
-                response = ""
-                start_time = time.time()
-                timeout = 1.0  # 1 second timeout
-                
-                while time.time() - start_time < timeout:
-                    if self.pico_serial.in_waiting > 0:
-                        response = self.pico_serial.readline().decode().strip()
-                        if response:
-                            break
-                    time.sleep(0.01)
-                
-                if not response:
-                    print(f"⚠️  No response from Pico for command: {command}")
-                    # Try reading all available data
-                    if self.pico_serial.in_waiting > 0:
-                        all_data = self.pico_serial.read(self.pico_serial.in_waiting).decode()
-                        print(f"📥 Available data: {repr(all_data)}")
-                
-                return response if response else None
             except Exception as e:
                 print(f"❌ Error communicating with Pico: {e}")
-                import traceback
-                traceback.print_exc()
                 return None
         elif self.motor_controller:
             # Handle local motor controller commands
@@ -225,161 +236,77 @@ class LatheController:
 
         return "Unknown command"
 
-    def process_gui_command(self, command):
-        """Process command from GUI"""
+    def process_gui_command(self, data):
+        """Process parsed JSON command from GUI"""
         try:
-            # Handle both string and dict inputs
-            if isinstance(command, str):
-                data = json.loads(command)
-            elif isinstance(command, dict):
-                data = command
-            else:
-                return
-            cmd_type = data.get("type", "")
-
-            if cmd_type == "mode_change":
+            cmd_type = data.get("type")
+            
+            if cmd_type == "status_request":
+                # Just trigger an update next loop
+                pass
+                
+            elif cmd_type == "mode_change":
                 self.current_mode = data.get("mode", "manual")
                 self.skill_level = data.get("skill_level", "beginner")
-                print(f"Mode changed to {self.current_mode}, skill: {self.skill_level}")
-
-            elif cmd_type == "set_parameters":
-                self.spindle_rpm = data.get("spindle_rpm", 0)
-                self.tool_feed_rate = data.get("feed_rate", 0)
-                # Send to motor controller
-                self.send_to_pico(f"vel {self.spindle_rpm}")
-
+                print(f"Mode changed to: {self.current_mode} ({self.skill_level})")
+                
             elif cmd_type == "emergency_stop":
                 self.emergency_stop = True
                 self.send_to_pico("stop")
-                print("EMERGENCY STOP ACTIVATED")
-
-            elif cmd_type == "zero_position":
-                axis = data.get("axis", "x")
-                if axis == "x":
-                    self.send_to_pico("zero")
-                print(f"Zeroed {axis} axis")
-
-            elif cmd_type == "reset":
-                self.emergency_stop = False
-                self.handle_wheel_position = 0.0
-                self.send_to_pico("zero")
-                print("System reset")
-
+                print("🚨 EMERGENCY STOP ACTIVATED")
+                
             elif cmd_type == "motor_control":
-                self.handle_motor_control(data)
-
-            elif cmd_type == "status_request":
-                # GUI requesting status update (already handled by periodic updates)
-                pass
-
+                action = data.get("action")
+                if action == "forward":
+                    self.send_to_pico(f"vel {self.target_velocity}")
+                elif action == "reverse":
+                    self.send_to_pico(f"vel {-self.target_velocity}")
+                elif action == "stop":
+                    print("⚙️  Sending to Pico: stop")
+                    response = self.send_to_pico("stop")
+                    print(f"✅ Pico response: {response}")
+                    print("Motor: Stop")
+                elif action == "speed":
+                    speed_value = float(data.get("value", 50.0))
+                    self.target_velocity = speed_value
+                    print(f"Motor speed set to: {speed_value} RPM")
+                elif action == "position":
+                    delta = float(data.get("delta", 0.0))
+                    current_pos = self.handle_wheel_position
+                    target_pos = current_pos + delta
+                    print(f"⚙️  Sending to Pico: pos {target_pos}")
+                    response = self.send_to_pico(f"pos {target_pos}")
+                    print(f"✅ Pico response: {response}")
+                    print(f"Motor position: {current_pos:.1f}° → {target_pos:.1f}°")
+                    
+            elif cmd_type == "zero_position":
+                axis = data.get("axis")
+                print(f"Zeroing {axis} axis")
+                # We don't zero the motor for this, just the GUI offset
+                
             elif cmd_type == "axis_select":
-                # Handle axis selection (X or Z)
-                axis = data.get("axis", "Z")
-                self.active_axis = axis
-                print(f"📐 Active axis set to: {axis}")
-
+                self.active_axis = data.get("axis", "Z")
+                print(f"Active axis: {self.active_axis}")
+                
             elif cmd_type == "haptic_feedback":
-                # Handle haptic feedback commands with virtual wall support
                 self.haptic_active = data.get("active", False)
                 self.haptic_force = data.get("force", 0.0)
-                print(f"🖐️  Haptic feedback: {'ON' if self.haptic_active else 'OFF'}, Force: {self.haptic_force:.1f}")
-
+                
                 if self.haptic_active and self.pico_serial:
-                    # GUI sends force as 0-100 representing penetration into virtual wall
-                    # Higher force = deeper penetration = stronger pushback needed
-                    physical_force = (self.haptic_force / 100.0) * 50.0  # 0-50N range
+                    physical_force = (self.haptic_force / 100.0) * 50.0
                     wall_active = 1 if physical_force > 0 else 0
-
-                    # Engage the Pico's encoder-backed virtual wall (second arg is an active flag)
                     self.send_to_pico(f"spring_wall {physical_force:.2f} {wall_active}")
-                    print(f"🧱 Virtual wall (hold): GUI_force={self.haptic_force:.1f}, Physical_force={physical_force:.2f}N, active={bool(wall_active)}")
+                    print(f"🧱 Wall: {physical_force:.1f}N")
                 elif not self.haptic_active and self.pico_serial:
-                    # Disable haptic feedback
                     self.send_to_pico("spring_wall 0 0")
 
         except json.JSONDecodeError as e:
-            print(f"Invalid JSON command: {e}")
-
-    def handle_motor_control(self, data):
-        """Handle motor control commands from GUI"""
-        action = data.get("action", "")
-        print(f"🎮 Processing motor control action: {action}")
-
-        if action == "forward":
-            # Start motor forward
-            speed = abs(self.target_velocity) if self.target_velocity != 0 else 50
-            print(f"⚙️  Sending to Pico: vel {speed}")
-            response = self.send_to_pico(f"vel {speed}")
-            print(f"✅ Pico response: {response}")
-            print("Motor: Forward")
-
-        elif action == "reverse":
-            # Start motor reverse
-            speed = -abs(self.target_velocity) if self.target_velocity != 0 else -50
-            print(f"⚙️  Sending to Pico: vel {speed}")
-            response = self.send_to_pico(f"vel {speed}")
-            print(f"✅ Pico response: {response}")
-            print("Motor: Reverse")
-
-        elif action == "stop":
-            # Stop motor
-            print("⚙️  Sending to Pico: stop")
-            response = self.send_to_pico("stop")
-            print(f"✅ Pico response: {response}")
-            print("Motor: Stop")
-
-        elif action == "speed":
-            # Set speed
-            speed_value = data.get("value", 50)
-            self.target_velocity = speed_value
-            # Don't send to motor here - wait for direction command
-            print(f"Motor speed set to: {speed_value} RPM")
-
-        elif action == "position":
-            # Manual position control
-            delta = data.get("delta", 0)
-            # Convert degrees to position command
-            current_pos = self.handle_wheel_position
-            target_pos = current_pos + delta
-            print(f"⚙️  Sending to Pico: pos {target_pos}")
-            response = self.send_to_pico(f"pos {target_pos}")
-            print(f"✅ Pico response: {response}")
-            print(f"Motor position: {current_pos:.1f}° → {target_pos:.1f}°")
+            print(f"Error processing GUI command: {e}")
+        except Exception as e:
+            print(f"Error processing GUI command: {e}")
 
     def update_status(self):
-        """Update and send current status to GUI"""
-        # Get current handle wheel position (from motor encoder)
-        if self.pico_serial:
-            # Read real encoder data from Pico
-            response = self.send_to_pico("status")
-            if response:
-                # Parse status response from Pico
-                try:
-                    # Expected format: "Position: 45.67 degrees, Velocity: 0.00 RPM, Mode: velocity"
-                    # Or: "Position: 45.67 degrees, Velocity: 0.00 RPM, Mode: position"
-                    if "Position:" in response:
-                        pos_part = response.split("Position:")[1].split(",")[0]
-                        self.handle_wheel_position = float(pos_part.strip().replace("degrees", "").strip())
-                        print(f"📊 Encoder position: {self.handle_wheel_position:.2f}°")
-                    else:
-                        print(f"⚠️  Unexpected status format: {response}")
-                except (IndexError, ValueError, AttributeError) as e:
-                    print(f"❌ Error parsing Pico response: {e}, response: {repr(response)}")
-                    # Fall back to previous position
-                    pass
-            else:
-                print(f"⚠️  No response from Pico status command")
-
-        elif self.motor_controller:
-            self.handle_wheel_position = self.motor_controller.get_position_degrees()
-
-        else:
-            # Demo mode: simulate handle wheel position with sine wave
-            # (Only when no Pico is connected)
-            self.handle_wheel_position = 30.0 * math.sin(time.time() * 0.5)
-            print(f"Demo position: {self.handle_wheel_position:.2f}° (simulated)")
-
-        # Send status update to GUI
+        """Send status update to GUI via TCP"""
         status = {
             "type": "status_update",
             "handle_wheel_position": self.handle_wheel_position,
@@ -390,7 +317,14 @@ class LatheController:
             "feed_rate": self.tool_feed_rate,
             "timestamp": time.time()
         }
-        self.send_to_gui(status)
+        
+        if self.client_socket:
+            try:
+                msg = json.dumps(status) + "\n"
+                self.client_socket.sendall(msg.encode())
+            except Exception as e:
+                print(f"Socket send error: {e}")
+                self.client_socket = None
 
     def perform_safety_checks(self):
         """Perform real-time safety checks"""
@@ -418,12 +352,39 @@ class LatheController:
         except Exception as e:
             print(f"Safety check error: {e}")
 
+    def read_pico_response(self):
+        """Non-blocking read from Pico"""
+        if self.pico_serial and self.pico_serial.in_waiting > 0:
+            try:
+                line = self.pico_serial.readline().decode().strip()
+                if line:
+                    # Parse status updates
+                    if "Position:" in line:
+                        # Parse: Position: -135.94 degrees, Velocity: ...
+                        parts = line.split(',')
+                        for part in parts:
+                            if "Position:" in part:
+                                try:
+                                    pos_str = part.split(':')[1].replace('degrees', '').strip()
+                                    self.handle_wheel_position = float(pos_str)
+                                except:
+                                    pass
+                    return line
+            except Exception:
+                pass
+        return None
+
     def run_control_loop(self):
         """Main control loop with safety monitoring"""
         last_status_time = 0
-        status_interval = 0.1  # 10Hz updates
+        status_interval = 0.033  # 30Hz updates to GUI
+        
+        last_pico_status_req = 0
+        pico_status_interval = 0.002  # 500Hz Pico polling
+        
         last_safety_check = 0
         safety_check_interval = 0.05  # 20Hz safety checks
+        
         last_heartbeat_check = 0
         heartbeat_check_interval = 1.0  # 1Hz heartbeat
 
@@ -433,34 +394,40 @@ class LatheController:
         last_gui_heartbeat = time.time()
         gui_connected = False
 
+        print("Starting control loop (500Hz)...")
+
         while not self.emergency_stop:
             current_time = time.time()
 
-            # Check for GUI commands via file
+            # 1. Read GUI Commands
             gui_command = self.read_gui_commands()
             if gui_command:
                 try:
                     if isinstance(gui_command, str):
-                        # Single command
                         self.process_gui_command(gui_command)
                     else:
-                        # Multiple commands or single command as dict
                         self.process_gui_command(gui_command)
                     last_gui_heartbeat = current_time
                     gui_connected = True
                     consecutive_errors = 0
                 except Exception as e:
-                    # Don't count JSON errors as consecutive errors - GUI might not be sending commands
                     print(f"Error processing GUI command: {e}")
-                    # Only increment errors if it's a real communication problem, not missing commands
-                    # consecutive_errors += 1  # DISABLED - don't crash on JSON errors
 
-            # Safety checks
+            # 2. Read Pico Responses
+            self.read_pico_response()
+
+            # 3. Poll Pico Status
+            if current_time - last_pico_status_req > pico_status_interval:
+                if self.pico_serial:
+                    self.send_to_pico("status")
+                last_pico_status_req = current_time
+
+            # 4. Safety checks
             if current_time - last_safety_check > safety_check_interval:
                 self.perform_safety_checks()
                 last_safety_check = current_time
 
-            # Heartbeat monitoring
+            # 5. Heartbeat monitoring
             if current_time - last_heartbeat_check > heartbeat_check_interval:
                 if gui_connected and current_time - last_gui_heartbeat > self.heartbeat_timeout:
                     print("GUI heartbeat timeout - activating safety stop")
@@ -468,18 +435,12 @@ class LatheController:
                     self.send_to_pico("stop")
                 last_heartbeat_check = current_time
 
-            # Emergency stop on too many consecutive errors
-            if consecutive_errors > max_consecutive_errors:
-                print("Too many consecutive communication errors - emergency stop")
-                self.emergency_stop = True
-                self.send_to_pico("stop")
-
-            # Send status updates
+            # 6. Send status updates
             if current_time - last_status_time > status_interval:
                 self.update_status()
                 last_status_time = current_time
 
-            # Run motor control loop if using local controller
+            # 7. Run motor control loop if using local controller
             if self.motor_controller and not self.emergency_stop:
                 try:
                     if self.motor_controller.control_mode == "position":
@@ -490,7 +451,8 @@ class LatheController:
                     print(f"Motor control error: {e}")
                     self.emergency_stop = True
 
-            time.sleep(0.01)  # 100Hz loop
+            # High speed loop sleep
+            time.sleep(0.002)  # ~500Hz
 
     def shutdown(self):
         """Clean shutdown"""
@@ -498,14 +460,11 @@ class LatheController:
             self.send_to_pico("stop")
             self.pico_serial.close()
 
-        # Clean up communication files
-        try:
-            if os.path.exists(self.bridge_status_file):
-                os.remove(self.bridge_status_file)
-            if os.path.exists(self.gui_commands_file):
-                os.remove(self.gui_commands_file)
-        except Exception as e:
-            print(f"Error cleaning up files: {e}")
+        if self.server_socket:
+            try:
+                self.server_socket.close()
+            except:
+                pass
 
         if self.motor_controller:
             self.motor_controller.stop_motor()

@@ -1,12 +1,18 @@
+import processing.net.*;
+
 // Haptic Lathe Simulator GUI - Integrated with Physical Motor
-// - File-based communication with Python bridge
+// - TCP Socket communication with Python bridge
 // - Handle wheel position input from motor encoder
 // - Real-time haptic feedback
 
-// File-based communication with Python bridge
-String bridgeStatusFile;
-String guiCommandsFile;
+// TCP Communication
+Client bridgeClient;
+String bridgeHost = "127.0.0.1";
+int bridgePort = 5005;
 boolean bridgeConnected = false;
+int lastReconnectAttempt = 0;
+int reconnectInterval = 2000;
+
 JSONObject lastStatus;
 float physicalHandlePosition = 0.0;  // degrees from motor encoder
 boolean usePhysicalInput = true;     // toggle between mouse and physical input
@@ -104,7 +110,7 @@ float currentForce = 0.0;    // Current force being applied [N]
 float currentToolX = 0;      // Current X position (pixels)
 float currentToolZ = 0;      // Current Z position (pixels)
 float lastHandlePosition = 0; // Last read encoder position
-boolean firstBridgeUpdate = true; // Flag to sync handle on first update
+boolean firstBridgeUpdate = true; // Flag to sync handle
 
 void setup() {
   size(1280, 720);
@@ -120,18 +126,8 @@ void setup() {
   footerFill  = color(230);
   accentFill  = color(240);
 
-  // Initialize file-based communication for motor control integration
-  String tempDir = System.getProperty("java.io.tmpdir");
-  bridgeStatusFile = tempDir + "/lathe_bridge_status.json";
-  guiCommandsFile = tempDir + "/lathe_gui_commands.json";
-
-  // Check if bridge is running by looking for status file
-  checkBridgeConnection();
-
-  // Send initial status request
-  if (bridgeConnected) {
-    sendToBridge("{\"type\":\"status_request\"}");
-  }
+  // Initialize TCP Connection
+  connectToBridge();
   
   // Initialize Tool Position (Safe Home)
   // Center of workspace X, below stock Y
@@ -148,53 +144,69 @@ void setup() {
   currentToolX = centerY + stockRadiusPx + 40; // 40px clearance
 }
 
-// Check if Python bridge is running
-void checkBridgeConnection() {
+void connectToBridge() {
   try {
-    File statusFile = new File(bridgeStatusFile);
-    bridgeConnected = statusFile.exists();
-    if (bridgeConnected) {
-      println("Bridge connection established via file: " + bridgeStatusFile);
+    bridgeClient = new Client(this, bridgeHost, bridgePort);
+    if (bridgeClient.active()) {
+      bridgeConnected = true;
+      println("✅ Connected to Bridge via TCP");
+      // Send initial status request
+      sendToBridge("{\"type\":\"status_request\"}");
     } else {
-      println("Bridge not connected - waiting for Python controller to start");
+      bridgeConnected = false;
+      println("⚠️ Could not connect to Bridge");
     }
   } catch (Exception e) {
-    println("Error checking bridge connection: " + e.getMessage());
+    println("❌ Connection error: " + e);
     bridgeConnected = false;
   }
 }
 
-// New function for file-based communication
-void sendToBridge(String message) {
-  if (bridgeConnected) {
-    try {
-      // Write command to file for Python bridge to read
-      String[] lines = { message };
-      saveStrings(guiCommandsFile, lines);
-      println("Sent to bridge: " + message);
-    } catch (Exception e) {
-      println("Error sending to bridge: " + e.getMessage());
+// Check if Python bridge is connected
+void checkBridgeConnection() {
+  if (bridgeClient != null && bridgeClient.active()) {
+    bridgeConnected = true;
+  } else {
+    bridgeConnected = false;
+    // Auto-reconnect
+    if (millis() - lastReconnectAttempt > reconnectInterval) {
+      println("🔄 Attempting to reconnect...");
+      connectToBridge();
+      lastReconnectAttempt = millis();
     }
   }
 }
 
-// File-based communication is handled in draw() loop
+// Send JSON command to bridge via TCP
+void sendToBridge(String jsonString) {
+  if (bridgeConnected) {
+    try {
+      bridgeClient.write(jsonString + "\n");
+    } catch (Exception e) {
+      println("Error sending to bridge: " + e);
+      bridgeConnected = false;
+    }
+  }
+}
+
+// Read incoming data from bridge via TCP
 void checkBridgeMessages() {
   if (bridgeConnected) {
     try {
-      File statusFile = new File(bridgeStatusFile);
-      if (statusFile.exists()) {
-        String[] lines = loadStrings(bridgeStatusFile);
-        if (lines != null && lines.length > 0) {
-          String data = join(lines, "");
-          lastStatus = parseJSONObject(data);
-          if (lastStatus != null) {
-            processBridgeMessage(lastStatus);
+      // Burst read: process ALL available messages to drain the buffer
+      // This prevents lag if messages arrive faster than frame rate
+      while (bridgeClient.available() > 0) {
+        String data = bridgeClient.readStringUntil('\n');
+        if (data != null) {
+          data = trim(data);
+          JSONObject json = parseJSONObject(data);
+          if (json != null) {
+            processBridgeMessage(json);
           }
         }
       }
     } catch (Exception e) {
-      // File might not exist or be corrupted, ignore
+      println("Error reading bridge data: " + e);
     }
   }
 }
