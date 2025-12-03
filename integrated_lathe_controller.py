@@ -242,8 +242,8 @@ class LatheController:
             cmd_type = data.get("type")
             
             if cmd_type == "status_request":
-                # Just trigger an update next loop
-                pass
+                # Trigger immediate update for low latency
+                self.update_status()
                 
             elif cmd_type == "mode_change":
                 self.current_mode = data.get("mode", "manual")
@@ -354,6 +354,7 @@ class LatheController:
 
     def read_pico_response(self):
         """Non-blocking read from Pico"""
+        updated = False
         if self.pico_serial and self.pico_serial.in_waiting > 0:
             try:
                 line = self.pico_serial.readline().decode().strip()
@@ -366,21 +367,24 @@ class LatheController:
                             if "Position:" in part:
                                 try:
                                     pos_str = part.split(':')[1].replace('degrees', '').strip()
-                                    self.handle_wheel_position = float(pos_str)
+                                    new_pos = float(pos_str)
+                                    if new_pos != self.handle_wheel_position:
+                                        self.handle_wheel_position = new_pos
+                                        updated = True
                                 except:
                                     pass
-                    return line
+                    return updated
             except Exception:
                 pass
-        return None
+        return False
 
     def run_control_loop(self):
         """Main control loop with safety monitoring"""
         last_status_time = 0
-        status_interval = 0.033  # 30Hz updates to GUI
+        status_interval = 0.033  # Keep as fallback heartbeat
         
         last_pico_status_req = 0
-        pico_status_interval = 0.002  # 500Hz Pico polling
+        pico_status_interval = 0.01  # 100Hz Pico polling
         
         last_safety_check = 0
         safety_check_interval = 0.05  # 20Hz safety checks
@@ -413,8 +417,10 @@ class LatheController:
                 except Exception as e:
                     print(f"Error processing GUI command: {e}")
 
-            # 2. Read Pico Responses
-            self.read_pico_response()
+            # 2. Read Pico Responses & Trigger Immediate Update
+            if self.read_pico_response():
+                self.update_status()
+                last_status_time = current_time
 
             # 3. Poll Pico Status
             if current_time - last_pico_status_req > pico_status_interval:
@@ -435,7 +441,7 @@ class LatheController:
                     self.send_to_pico("stop")
                 last_heartbeat_check = current_time
 
-            # 6. Send status updates
+            # 6. Periodic Status Heartbeat (if no updates recently)
             if current_time - last_status_time > status_interval:
                 self.update_status()
                 last_status_time = current_time
