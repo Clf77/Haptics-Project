@@ -296,6 +296,14 @@ class MotorController:
 
         print(f"🧱 Active force feedback: {force_newtons:.2f}N, Motor: {motor_rpm:.1f} RPM")
 
+    def set_raw_driver(self, ena_duty, in1, in2):
+        """Manual control of motor driver pins for debugging"""
+        self.motor_ena.duty_u16(int(ena_duty))
+        self.motor_in1.value(int(in1))
+        self.motor_in2.value(int(in2))
+        self.control_mode = "raw"
+        print(f"Raw driver set: ENA={ena_duty}, IN1={in1}, IN2={in2}")
+
     def set_spring_wall(self, force_newtons, wall_flag=1):
         """Encoder-backed virtual wall: capture surface and hold position.
 

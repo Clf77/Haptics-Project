@@ -91,6 +91,10 @@ while True:
                     motor.set_force_feedback(force_value, motor_rpm)
                     print(f"OK: Force feedback set to {force_value:.2f}N at {motor_rpm:.1f} RPM")
 
+                elif cmd == "raw" and len(parts) == 4:
+                    motor.set_raw_driver(parts[1], parts[2], parts[3])
+                    print(f"OK: Raw driver set")
+
                 else:
                     print(f"ERROR: Unknown command: {line}")
 

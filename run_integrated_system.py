@@ -261,10 +261,7 @@ class IntegratedLauncher:
         # Find serial ports
         gui_port, pico_port = self.find_serial_ports()
 
-        if gui_port:
-            print(f"GUI port: {gui_port}")
-        else:
-            print("No GUI serial port detected (this is OK if using local controller)")
+        print(f"GUI Connection: TCP/IP (localhost:5005) [READY]")
 
         if pico_port:
             print(f"Pico port: {pico_port}")
