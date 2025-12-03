@@ -8,6 +8,14 @@ from motor_control import MotorController
 import time
 import select
 
+print("Raspberry Pi Pico CQR37D Motor Controller")
+print("==========================================")
+
+# SAFE BOOT DELAY
+print("Safe Boot: Waiting 3 seconds... (Press Ctrl+C to interrupt)")
+time.sleep(3.0)
+print("Starting...")
+
 # Initialize motor controller
 print("Starting motor control interface...")
 motor = MotorController()

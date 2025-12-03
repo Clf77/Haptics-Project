@@ -396,6 +396,18 @@ class MotorController:
         
         # Force is proportional to penetration
         force = k * x_penetration  # [N] Magnitude of restoring force
+
+        # --- VIBRATION EFFECT ---
+        # Add sinusoidal vibration scaled by force to simulate cutting texture
+        # Frequency: 10Hz (User requested)
+        # Amplitude: 100% of current wall force (User requested 5x stronger)
+        vib_freq = 10.0
+        vib_amp_scale = 1.0
+        t_sec = time.ticks_ms() / 1000.0
+        vibration = force * vib_amp_scale * math.sin(2 * math.pi * vib_freq * t_sec)
+        force += vibration
+        force = max(0.0, force) # Clamp to ensure we don't pull into wall
+        # ------------------------
         
         # 3. Calculate Motor Torque
         # Torque at handle = Force * radius
