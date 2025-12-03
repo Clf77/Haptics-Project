@@ -264,15 +264,15 @@ void drawLeftPanel() {
   float innerX = x + padding;
   float innerY = y + padding;
 
-  // ----- Training Scenario -----
-  drawSubPanelTitle(innerX, innerY, "Training Scenario");
+  // ----- Training Scenario (REMOVED) -----
+  // Replaced by intelligent cutting logic
   innerY += 25;
-  drawPillButton(innerX, innerY, "Facing", facingSelected);
-  innerY += 30;
-  drawPillButton(innerX, innerY, "Turn to Diameter", turnDiaSelected);
-  innerY += 30;
-  drawPillButton(innerX, innerY, "Boring", boringSelected);
-  innerY += 30;
+  // drawPillButton(innerX, innerY, "Facing", facingSelected);
+  // innerY += 30;
+  // drawPillButton(innerX, innerY, "Turn to Diameter", turnDiaSelected);
+  // innerY += 30;
+  // drawPillButton(innerX, innerY, "Boring", boringSelected);
+  // innerY += 30;
 
   // ----- Skill Level -----
   innerY += 45;
@@ -335,11 +335,11 @@ void drawLeftPanel() {
   // Now draw the buttons (after hit testing)
   innerY = y + padding + 50;  // reset position for drawing
 
-  drawPillButton(innerX, innerY, "Facing", facingSelected);
-  innerY += 30;
-  drawPillButton(innerX, innerY, "Turn to Diameter", turnDiaSelected);
-  innerY += 30;
-  drawPillButton(innerX, innerY, "Boring", boringSelected);
+  // drawPillButton(innerX, innerY, "Facing", facingSelected);
+  // innerY += 30;
+  // drawPillButton(innerX, innerY, "Turn to Diameter", turnDiaSelected);
+  // innerY += 30;
+  // drawPillButton(innerX, innerY, "Boring", boringSelected);
 
   innerY += 75;  // Skip to skill level buttons
   drawOutlinedButton(innerX, innerY, "Beginner", beginnerSelected);
@@ -377,14 +377,9 @@ void mousePressed() {
   // Click elsewhere = deactivate field
   activeField = 0;
 
-  // Send mode changes to bridge
-  if (facingSelected) {
-    sendToBridge("{\"type\":\"mode_change\",\"mode\":\"facing\",\"skill_level\":\"" + getSkillLevel() + "\"}");
-  } else if (turnDiaSelected) {
-    sendToBridge("{\"type\":\"mode_change\",\"mode\":\"turning\",\"skill_level\":\"" + getSkillLevel() + "\"}");
-  } else if (boringSelected) {
-    sendToBridge("{\"type\":\"mode_change\",\"mode\":\"boring\",\"skill_level\":\"" + getSkillLevel() + "\"}");
-  }
+  // Send mode changes to bridge (REMOVED SCENARIOS)
+  // Now we just rely on activeAxis for haptic feedback direction
+  // if (facingSelected) { ... }
 
   // Handle control buttons
   if (resetSelected) {
@@ -637,7 +632,7 @@ void drawMainView() {
   float stockHPx   = stockDiameterIn * pxPerIn;
 
   // Keep stock from overflowing the workspace too crazily
-  stockLenPx = min(stockLenPx, innerW * 0.75);
+  // stockLenPx = min(stockLenPx, innerW * 0.75); // Removed to allow facing visualization
   stockHPx   = min(stockHPx, workspaceH * 0.6);
 
   // Chuck
@@ -789,71 +784,76 @@ void drawMainView() {
 
     float collisionMargin = 2.0; // 2px margin for robust detection
 
-    if (activeAxis.equals("Z")) {
-      // Axial Collision (Facing)
-      // Check if tool is within the diameter of the stock (with margin)
-      // Use the profile radius at the face
-      int faceIdx = int(stockLenPx) - 1;
-      float faceRadius = (faceIdx >= 0 && faceIdx < stockProfileLen) ? stockProfile[faceIdx] : 0;
+    // INTELLIGENT CUTTING LOGIC
+    // Check BOTH Axial (Facing) and Radial (Turning) collisions
+    // Apply haptics based on which one is happening (or prioritized)
+    
+    boolean axialCollision = false;
+    boolean radialCollision = false;
+    float axialPenetration = 0;
+    float radialPenetration = 0;
+    
+    // 1. Check Axial (Facing)
+    int faceIdx = int(stockLenPx) - 1;
+    float faceRadius = (faceIdx >= 0 && faceIdx < stockProfileLen) ? stockProfile[faceIdx] : 0;
+    
+    if (toolTipDistFromCenter <= faceRadius + collisionMargin) {
+      float distFromFacePx = toolTipXpx - stockRightX;
       
-      if (toolTipDistFromCenter <= faceRadius + collisionMargin) {
-        // Check if tool tip has passed the face of the stock (moving Left)
-        // stockRightX is the face. Tool comes from Right.
-        float distFromFacePx = toolTipXpx - stockRightX;
+      // DEBUG FACING
+      if (frameCount % 60 == 0) {
+         println("Face Check: Dist=" + distFromFacePx + ", Radial=" + toolTipDistFromCenter + " vs " + faceRadius);
+      }
+      
+      if (distFromFacePx < 0) {
+        axialCollision = true;
+        axialPenetration = abs(distFromFacePx) / pxPerIn * 0.0254;
         
-        if (distFromFacePx < 0) {
-          // Penetrating face
-          xh = abs(distFromFacePx) / pxPerIn * 0.0254;
-          checkCollision = true;
-          
-          // CUTTING LOGIC (Facing)
-          // If penetrating significantly, remove material (shorten stock)
-          // Only cut if we are pushing INTO the material (negative delta)
-          // For simplicity, we'll just shorten the stock length variable
-          // But we need to be careful not to cut too fast
-          if (abs(distFromFacePx) > 1.0) {
-             stockLengthIn -= 0.002; // Material removal rate
-             stockLenPx = stockLengthIn * pxPerIn;
-             stockRightX = chuckX + stockLenPx;
-          }
+        // Cut if penetrating
+        if (abs(distFromFacePx) > 1.0) {
+           stockLengthIn -= 0.005; 
+           stockLenPx = stockLengthIn * pxPerIn;
+           stockRightX = chuckX + stockLenPx;
         }
       }
-    } else {
-      // Radial Collision (Turning)
-      // Check if tool is within the length of the stock (with margin)
-      if (toolTipXpx < stockRightX + collisionMargin && toolTipXpx > chuckX) {
+    }
+    
+    // 2. Check Radial (Turning)
+    if (toolTipXpx < stockRightX + collisionMargin && toolTipXpx > chuckX) {
+      int zIndex = int(toolTipXpx - chuckX);
+      if (zIndex >= 0 && zIndex < stockProfileLen) {
+        float currentRadius = stockProfile[zIndex];
+        float distFromSurface = toolTipDistFromCenter - currentRadius;
         
-        // Get profile radius at tool Z position
-        int zIndex = int(toolTipXpx - chuckX);
-        if (zIndex >= 0 && zIndex < stockProfileLen) {
-          float currentRadius = stockProfile[zIndex];
+        if (distFromSurface < 0) {
+          radialCollision = true;
+          radialPenetration = abs(distFromSurface) / pxPerIn * 0.0254;
           
-          // Check if tool tip is inside the current diameter
-          float distFromSurfacePx = toolTipDistFromCenter - currentRadius;
-          
-          if (distFromSurfacePx < 0) {
-            // Penetrating diameter
-            xh = abs(distFromSurfacePx) / pxPerIn * 0.0254;
-            checkCollision = true;
-            
-            // CUTTING LOGIC (Turning)
-            // Update profile to match tool position (material removal)
-            // "Cut" the material down to the tool's radius
-            stockProfile[zIndex] = toolTipDistFromCenter;
-            
-            // Cut a bit of width (tool width)
-            for(int k=-2; k<=2; k++) {
-               int neighbor = zIndex + k;
-               if (neighbor >=0 && neighbor < stockProfileLen) {
-                  if (stockProfile[neighbor] > toolTipDistFromCenter) {
-                     stockProfile[neighbor] = toolTipDistFromCenter;
-                  }
-               }
-            }
+          // Cut if penetrating
+          if (abs(distFromSurface) > 1.0) {
+             stockProfile[zIndex] = toolTipDistFromCenter;
           }
         }
       }
     }
+    
+    // 3. Determine Haptic Feedback
+    // If activeAxis is Z, we only feel Axial collisions
+    // If activeAxis is X, we only feel Radial collisions
+    
+    if (activeAxis.equals("Z") && axialCollision) {
+       checkCollision = true;
+       xh = axialPenetration;
+       println("🔴 AXIAL COLLISION (Z)");
+    } else if (activeAxis.equals("X") && radialCollision) {
+       checkCollision = true;
+       xh = radialPenetration;
+       println("🔴 RADIAL COLLISION (X)");
+    } else {
+       checkCollision = false;
+       xh = 0;
+    }
+
 
   // Virtual wall parameters
   float wall_position = 0.0;  // Wall is at surface (0mm penetration)
