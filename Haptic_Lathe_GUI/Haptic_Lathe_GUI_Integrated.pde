@@ -41,6 +41,10 @@ float stockLengthIn   = 9.0;   // length of stock in inches
 float stockDiameterIn = 1.25;  // diameter of stock in inches
 float pxPerIn         = 60.0;  // scale factor: pixels per inch
 
+// Material Removal State
+float[] stockProfile; // Array storing radius (in pixels) at each Z-pixel
+int stockProfileLen;  // Length of the profile array
+
 // ----- Button state booleans -----
 // Training scenario
 boolean facingSelected       = true;
@@ -105,6 +109,7 @@ float zPosIn = 0;
 boolean toolCollision = false;
 float collisionForce = 0.0;  // Force magnitude when collision detected
 float currentForce = 0.0;    // Current force being applied [N]
+float lastSentForce = 0.0;   // Track last sent force to avoid flooding
 
 // Relative Positioning State
 float currentToolX = 0;      // Current X position (pixels)
@@ -141,7 +146,20 @@ void setup() {
   currentToolZ = chuckX + stockLenPx * 0.50;
   
   // Start X well outside the stock (below it)
+  // Start X well outside the stock (below it)
   currentToolX = centerY + stockRadiusPx + 40; // 40px clearance
+  
+  // Initialize Stock Profile
+  initStockProfile();
+}
+
+void initStockProfile() {
+  stockProfileLen = int(stockLengthIn * pxPerIn) + 100; // Extra buffer
+  stockProfile = new float[stockProfileLen];
+  float radiusPx = (stockDiameterIn * pxPerIn) / 2.0;
+  for (int i = 0; i < stockProfileLen; i++) {
+    stockProfile[i] = radiusPx;
+  }
 }
 
 void connectToBridge() {
@@ -371,6 +389,7 @@ void mousePressed() {
   // Handle control buttons
   if (resetSelected) {
     sendToBridge("{\"type\":\"reset\"}");
+    initStockProfile(); // Reset the visual stock
   }
 
   // Zero buttons now send to physical controller
@@ -480,6 +499,23 @@ void keyPressed() {
   if (key == 'p' || key == 'P') {
     usePhysicalInput = !usePhysicalInput;
     println("Physical input: " + (usePhysicalInput ? "ON" : "OFF"));
+  }
+  
+  // Handle numeric input for Spindle Speed
+  if (activeField == 1) {
+    if (key >= '0' && key <= '9') {
+      if (spindleStr.equals("0")) spindleStr = "";
+      spindleStr += key;
+      spindleRPM = float(spindleStr);
+      updateCuttingParameters();
+    } else if (key == BACKSPACE) {
+      if (spindleStr.length() > 0) {
+        spindleStr = spindleStr.substring(0, spindleStr.length()-1);
+        if (spindleStr.length() == 0) spindleStr = "0";
+        spindleRPM = float(spindleStr);
+        updateCuttingParameters();
+      }
+    }
   }
 }
 
@@ -617,13 +653,43 @@ void drawMainView() {
   float stockTopY    = centerY - stockHPx / 2;
   float stockRadiusPx = stockHPx / 2.0;  // Define radius early for use in tool positioning
 
-  fill(180);
-  stroke(0);
-  rect(chuckX, stockTopY, stockLenPx, stockHPx);
-
   // Simulated rotation (simple sine wave for demo)
   float t = millis() / 1000.0;
   float angularPos = TWO_PI * spindleRPM * t / 60.0;
+
+  fill(180);
+  stroke(0);
+  
+  // Render Stock Profile using beginShape
+  beginShape();
+  // Top edge
+  for (int i = 0; i < stockLenPx; i++) {
+    if (i < stockProfileLen) {
+      float r = stockProfile[i];
+      // Add rotation effect
+      float amp = r * 0.02; // Small wobble
+      float yOffset = amp * sin(angularPos + i * 0.1);
+      vertex(chuckX + i, centerY - r + yOffset);
+    }
+  }
+  // Right face
+  float lastR = (stockLenPx < stockProfileLen) ? stockProfile[int(stockLenPx)-1] : 0;
+  vertex(chuckX + stockLenPx, centerY - lastR);
+  vertex(chuckX + stockLenPx, centerY + lastR);
+  
+  // Bottom edge
+  for (int i = int(stockLenPx) - 1; i >= 0; i--) {
+    if (i < stockProfileLen) {
+      float r = stockProfile[i];
+      float amp = r * 0.02;
+      float yOffset = amp * sin(angularPos + i * 0.1);
+      vertex(chuckX + i, centerY + r + yOffset);
+    }
+  }
+  // Left face (chuck side)
+  vertex(chuckX, centerY + stockHPx/2); 
+  vertex(chuckX, centerY - stockHPx/2);
+  endShape(CLOSE);
 
   // Draw a wavy line to simulate rotating stock
   stroke(0);
@@ -721,34 +787,73 @@ void drawMainView() {
   float xh = 0.0; // Penetration in meters
   boolean checkCollision = false;
 
-  if (activeAxis.equals("Z")) {
-    // Axial Collision (Facing)
-    // Check if tool is within the diameter of the stock
-    if (toolTipDistFromCenter < stockRadiusPx) {
-      // Check if tool tip has passed the face of the stock (moving Left)
-      // stockRightX is the face. Tool comes from Right.
-      float distFromFacePx = toolTipXpx - stockRightX;
+    float collisionMargin = 2.0; // 2px margin for robust detection
+
+    if (activeAxis.equals("Z")) {
+      // Axial Collision (Facing)
+      // Check if tool is within the diameter of the stock (with margin)
+      // Use the profile radius at the face
+      int faceIdx = int(stockLenPx) - 1;
+      float faceRadius = (faceIdx >= 0 && faceIdx < stockProfileLen) ? stockProfile[faceIdx] : 0;
       
-      if (distFromFacePx < 0) {
-        // Penetrating face
-        xh = abs(distFromFacePx) / pxPerIn * 0.0254;
-        checkCollision = true;
+      if (toolTipDistFromCenter <= faceRadius + collisionMargin) {
+        // Check if tool tip has passed the face of the stock (moving Left)
+        // stockRightX is the face. Tool comes from Right.
+        float distFromFacePx = toolTipXpx - stockRightX;
+        
+        if (distFromFacePx < 0) {
+          // Penetrating face
+          xh = abs(distFromFacePx) / pxPerIn * 0.0254;
+          checkCollision = true;
+          
+          // CUTTING LOGIC (Facing)
+          // If penetrating significantly, remove material (shorten stock)
+          // Only cut if we are pushing INTO the material (negative delta)
+          // For simplicity, we'll just shorten the stock length variable
+          // But we need to be careful not to cut too fast
+          if (abs(distFromFacePx) > 1.0) {
+             stockLengthIn -= 0.002; // Material removal rate
+             stockLenPx = stockLengthIn * pxPerIn;
+             stockRightX = chuckX + stockLenPx;
+          }
+        }
+      }
+    } else {
+      // Radial Collision (Turning)
+      // Check if tool is within the length of the stock (with margin)
+      if (toolTipXpx < stockRightX + collisionMargin && toolTipXpx > chuckX) {
+        
+        // Get profile radius at tool Z position
+        int zIndex = int(toolTipXpx - chuckX);
+        if (zIndex >= 0 && zIndex < stockProfileLen) {
+          float currentRadius = stockProfile[zIndex];
+          
+          // Check if tool tip is inside the current diameter
+          float distFromSurfacePx = toolTipDistFromCenter - currentRadius;
+          
+          if (distFromSurfacePx < 0) {
+            // Penetrating diameter
+            xh = abs(distFromSurfacePx) / pxPerIn * 0.0254;
+            checkCollision = true;
+            
+            // CUTTING LOGIC (Turning)
+            // Update profile to match tool position (material removal)
+            // "Cut" the material down to the tool's radius
+            stockProfile[zIndex] = toolTipDistFromCenter;
+            
+            // Cut a bit of width (tool width)
+            for(int k=-2; k<=2; k++) {
+               int neighbor = zIndex + k;
+               if (neighbor >=0 && neighbor < stockProfileLen) {
+                  if (stockProfile[neighbor] > toolTipDistFromCenter) {
+                     stockProfile[neighbor] = toolTipDistFromCenter;
+                  }
+               }
+            }
+          }
+        }
       }
     }
-  } else {
-    // Radial Collision (Turning)
-    // Check if tool is within the length of the stock
-    if (toolTipXpx < stockRightX && toolTipXpx > chuckX) {
-      // Check if tool tip is inside the diameter
-      float distFromSurfacePx = toolTipDistFromCenter - stockRadiusPx;
-      
-      if (distFromSurfacePx < 0) {
-        // Penetrating diameter
-        xh = abs(distFromSurfacePx) / pxPerIn * 0.0254;
-        checkCollision = true;
-      }
-    }
-  }
 
   // Virtual wall parameters
   float wall_position = 0.0;  // Wall is at surface (0mm penetration)
@@ -779,15 +884,34 @@ void drawMainView() {
     toolCollision = false;
   }
 
-  // Send haptic feedback to motor (ONLY ON STATE CHANGE)
+  // Send haptic feedback to motor
   if (bridgeConnected) {
-    if (toolCollision && !wasColliding) {
-      // Just entered virtual wall - engage
-      sendToBridge("{\"type\":\"haptic_feedback\",\"force\":" + collisionForce + ",\"active\":true}");
-      println("🧱 VIRTUAL WALL ENTERED: Force = " + force + "N");
-    } else if (!toolCollision && wasColliding) {
+    boolean forceChanged = abs(collisionForce - lastSentForce) > 1.0; // Update if force changes by > 1%
+    
+    // Calculate SFM (Surface Feet per Minute)
+    // Diameter = 2 * Radius (rawXIn is radius in inches)
+    float currentDiameterIn = 2.0 * rawXIn;
+    float sfm = (spindleRPM * currentDiameterIn * PI) / 12.0;
+    
+    // Map SFM to Vibration Frequency
+    // 10 SFM -> 10 Hz
+    // 1000 SFM -> 200 Hz
+    float vibFreq = map(sfm, 10, 1000, 10, 200);
+    vibFreq = constrain(vibFreq, 10, 200);
+
+    if (toolCollision) {
+      if (!wasColliding || forceChanged) {
+        // Entered wall OR force changed significantly while in wall
+        // Yield force: 15N for cutting (allows wall to move if pushed harder)
+        float yieldForce = 15.0; 
+        sendToBridge("{\"type\":\"haptic_feedback\",\"force\":" + collisionForce + ",\"active\":true,\"freq\":" + vibFreq + ",\"yield\":" + yieldForce + "}");
+        lastSentForce = collisionForce;
+        if (!wasColliding) println("🧱 VIRTUAL WALL ENTERED (SFM=" + nf(sfm,0,1) + ", Freq=" + nf(vibFreq,0,1) + "Hz)");
+      }
+    } else if (wasColliding) {
       // Just exited virtual wall - release
-      sendToBridge("{\"type\":\"haptic_feedback\",\"force\":0,\"active\":false}");
+      sendToBridge("{\"type\":\"haptic_feedback\",\"force\":0,\"active\":false,\"freq\":10}");
+      lastSentForce = 0.0;
       println("✅ Virtual wall exited - no resistance");
     }
   }

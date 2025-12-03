@@ -291,12 +291,14 @@ class LatheController:
             elif cmd_type == "haptic_feedback":
                 self.haptic_active = data.get("active", False)
                 self.haptic_force = data.get("force", 0.0)
+                self.vib_freq = data.get("freq", 10.0)
+                self.yield_force = data.get("yield", 50.0) # Default to rigid
                 
                 if self.haptic_active and self.pico_serial:
                     physical_force = (self.haptic_force / 100.0) * 50.0
                     wall_active = 1 if physical_force > 0 else 0
-                    self.send_to_pico(f"spring_wall {physical_force:.2f} {wall_active}")
-                    print(f"🧱 Wall: {physical_force:.1f}N")
+                    self.send_to_pico(f"spring_wall {physical_force:.2f} {wall_active} {self.vib_freq:.1f} {self.yield_force:.1f}")
+                    print(f"🧱 Wall: {physical_force:.1f}N, Freq: {self.vib_freq:.1f}Hz, Yield: {self.yield_force:.1f}N")
                 elif not self.haptic_active and self.pico_serial:
                     self.send_to_pico("spring_wall 0 0")
 
@@ -480,17 +482,27 @@ class LatheController:
 def main():
     print("Haptic Lathe Controller Starting...")
 
-    # Use file-based communication for GUI and try different serial ports for Pico
-    pico_ports = ["/dev/cu.usbmodem11401", "/dev/cu.usbmodem2101", "/dev/tty.usbmodem2101", "/dev/ttyACM1", "/dev/ttyUSB1", "COM5", "COM6"]
+    # Check environment variable first (from launcher)
+    env_port = os.environ.get("PICO_SERIAL_PORT")
+    
+    # List of ports to try
+    pico_ports = []
+    if env_port:
+        pico_ports.append(env_port)
+        
+    # Add fallbacks
+    pico_ports.extend(["/dev/cu.usbmodem11401", "/dev/cu.usbmodem1401", "/dev/cu.usbmodem2101", "/dev/tty.usbmodem2101", "/dev/ttyACM1", "/dev/ttyUSB1", "COM5", "COM6"])
 
     controller = None
 
-    # Try to create controller with file-based GUI communication
+    # Try to connect
     for pico_port in pico_ports:
         try:
+            print(f"Attempting connection on {pico_port}...")
             controller = LatheController(pico_serial_port=pico_port)
-            # Controller will use file-based communication for GUI and try to connect to Pico
-            break
+            if controller.pico_serial:
+                print(f"Successfully connected to Pico on {pico_port}")
+                break
         except Exception as e:
             print(f"Failed to initialize with {pico_port}: {e}")
             continue

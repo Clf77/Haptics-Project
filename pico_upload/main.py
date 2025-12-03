@@ -63,13 +63,27 @@ while True:
                     motor.hold_position_here()
                     control_mode = motor.control_mode
 
-                elif cmd == "spring_wall" and len(parts) >= 2:
-                    force_value = float(parts[1])
-                    wall_flag = float(parts[2]) if len(parts) >= 3 else 1.0
-                    motor.set_spring_wall(force_value, wall_flag)
+                elif cmd == "spring_wall":
+                    try:
+                        if len(parts) < 3:
+                            print("ERROR: spring_wall command requires at least force and active arguments.")
+                            continue
+                        
+                        force = float(parts[1])
+                        wall_active = int(parts[2])
+                        freq = 10.0
+                        yield_force = 50.0 # Default yield force
+                        
+                        if len(parts) > 3:
+                            freq = float(parts[3])
+                        if len(parts) > 4:
+                            yield_force = float(parts[4])
+                            
+                        motor.set_spring_wall(force, wall_active, freq, yield_force)
+                        print(f"OK: Spring wall set: {force}N, Active: {wall_active}, Freq: {freq}Hz, Yield: {yield_force}N")
+                    except ValueError:
+                        print("ERROR: Invalid spring_wall arguments. Usage: spring_wall <forceN> <active> [freqHz] [yieldN]")
                     control_mode = motor.control_mode
-                    state = "engaged" if force_value > 0 and wall_flag != 0 else "released"
-                    print(f"OK: Virtual wall {state} - force={force_value:.2f}N, flag={wall_flag}")
 
                 elif cmd == "stop":
                     motor.stop_motor()

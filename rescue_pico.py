@@ -2,43 +2,38 @@ import serial
 import time
 import sys
 
+PORT = "/dev/cu.usbmodem11401"
+BAUD = 115200
+
 def rescue():
-    port = "/dev/cu.usbmodem11401"
+    port = PORT
     print(f"Waiting for {port}...")
     
     # Wait for port to appear
     while True:
         try:
-            ser = serial.Serial(port, 115200, timeout=0.1)
+            ser = serial.Serial(port, BAUD, timeout=0.1)
+            ser.close() # Close immediately, just checking if it's available
             break
         except:
             time.sleep(0.1)
             
     print("Port detected! Spamming Ctrl+C...")
     
-    # Spam Ctrl+C to interrupt main.py
-    start_time = time.time()
-    while time.time() - start_time < 5.0:
-        ser.write(b'\x03')
-        time.sleep(0.01)
-        
+    # Try to interrupt running script
     print("Attempting to enter REPL...")
-    ser.write(b'\r\n')
-    time.sleep(0.1)
-    resp = ser.read_all()
-    print(f"Response: {resp}")
-    
-    if b'>>>' in resp:
-        print("SUCCESS: REPL detected.")
-        # Now we can try to overwrite main.py with a safe version
-        # We'll just write a dummy main.py directly via REPL to be safe
-        print("Disabling main.py...")
-        ser.write(b"f = open('main.py', 'w')\r\nf.write('print(\"Safe mode\")\\n')\r\nf.close()\r\n")
-        time.sleep(1.0)
-        print("Safe main.py written.")
-        ser.close()
-        return True
-    else:
+    try:
+        with serial.Serial(port, BAUD, timeout=1) as ser:
+            ser.write(b'\x03') # Ctrl+C
+            time.sleep(0.1)
+            ser.write(b'\x01') # Ctrl+A (Raw REPL)
+            time.sleep(0.1)
+            response = ser.read_all()
+            print(f"Response: {response}")
+            return True
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
         print("Failed to detect REPL.")
         ser.close()
         return False

@@ -77,6 +77,8 @@ class MotorController:
 
         # Haptic feedback
         self.haptic_brake_percent = 0.0  # 0.0 to 1.0 (0% to 100% braking)
+        self.vib_freq = 10.0  # Default vibration frequency [Hz]
+        self.yield_force = 50.0  # Force at which wall yields (cuts) [N]
 
         # PWM configuration
         self.motor_ena.freq(1000)  # 1kHz PWM frequency
@@ -304,17 +306,23 @@ class MotorController:
         self.control_mode = "raw"
         print(f"Raw driver set: ENA={ena_duty}, IN1={in1}, IN2={in2}")
 
-    def set_spring_wall(self, force_newtons, wall_flag=1):
+    def set_spring_wall(self, force_newtons, wall_flag=1, vib_freq=10.0, yield_force=50.0):
         """Encoder-backed virtual wall: capture surface and hold position.
 
         Args:
             force_newtons: Penetration-based force request (0-50N typical)
             wall_flag: Non-zero engages the wall. If a legacy RPM is passed in,
                        its sign is used as a direction hint.
+            vib_freq: Vibration frequency in Hz (default 10.0)
+            yield_force: Force at which wall moves (cuts) [N] (default 50.0)
         """
         # Clamp force and store for debugging/telemetry
         self.wall_force_newtons = max(0.0, min(force_newtons, 50.0))
+        # Clamp force and store for debugging/telemetry
+        self.wall_force_newtons = max(0.0, min(force_newtons, 50.0))
         self.force_command = self.wall_force_newtons
+        self.vib_freq = max(1.0, min(vib_freq, 200.0)) # Clamp frequency 1-200Hz
+        self.yield_force = max(1.0, min(yield_force, 50.0)) # Clamp yield 1-50N
 
         # Legacy compatibility: if wall_flag looks like an RPM, use its sign as a hint
         direction_hint = None
@@ -397,14 +405,32 @@ class MotorController:
         # Force is proportional to penetration
         force = k * x_penetration  # [N] Magnitude of restoring force
 
+        # --- YIELDING LOGIC (CUTTING) ---
+        # If force exceeds yield_force, move the wall anchor (plastic deformation)
+        if force > self.yield_force:
+            # We want force to be yield_force
+            # yield_force = k * new_x_penetration
+            new_x_penetration = self.yield_force / k
+            
+            # Convert back to degrees
+            new_penetration_deg = (new_x_penetration / rh) * (180.0 / math.pi)
+            
+            # Update wall contact position to maintain this penetration
+            # penetration_deg = (current_pos - wall_contact) * direction
+            # wall_contact = current_pos - (penetration_deg * direction)
+            self.wall_contact_position_deg = current_pos - (new_penetration_deg * self.wall_direction)
+            
+            # Cap the force for this step
+            force = self.yield_force
+        # --------------------------------
+
         # --- VIBRATION EFFECT ---
         # Add sinusoidal vibration scaled by force to simulate cutting texture
-        # Frequency: 10Hz (User requested)
-        # Amplitude: 100% of current wall force (User requested 5x stronger)
-        vib_freq = 10.0
+        # Frequency: Variable based on surface speed (SFM)
+        # Amplitude: 100% of current wall force
         vib_amp_scale = 1.0
         t_sec = time.ticks_ms() / 1000.0
-        vibration = force * vib_amp_scale * math.sin(2 * math.pi * vib_freq * t_sec)
+        vibration = force * vib_amp_scale * math.sin(2 * math.pi * self.vib_freq * t_sec)
         force += vibration
         force = max(0.0, force) # Clamp to ensure we don't pull into wall
         # ------------------------
