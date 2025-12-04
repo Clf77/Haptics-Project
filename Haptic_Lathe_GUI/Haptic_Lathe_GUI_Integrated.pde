@@ -40,6 +40,7 @@ int accentFill;
 float stockLengthIn   = 9.0;   // length of stock in inches
 float stockDiameterIn = 1.25;  // diameter of stock in inches
 float pxPerIn         = 60.0;  // scale factor: pixels per inch
+float toolTipRadiusPx = 5.0;   // Radius of the tool tip (Hyperbolic profile)
 
 // Material Removal State
 float[] stockProfile; // Array storing radius (in pixels) at each Z-pixel
@@ -665,10 +666,8 @@ void drawMainView() {
   for (int i = 0; i < stockLenPx; i++) {
     if (i < stockProfileLen) {
       float r = stockProfile[i];
-      // Add rotation effect
-      float amp = r * 0.02; // Small wobble
-      float yOffset = amp * sin(angularPos + i * 0.1);
-      vertex(chuckX + i, centerY - r + yOffset);
+      // STRAIGHT VISUALS - No wobble
+      vertex(chuckX + i, centerY - r);
     }
   }
   // Right face
@@ -680,9 +679,8 @@ void drawMainView() {
   for (int i = int(stockLenPx) - 1; i >= 0; i--) {
     if (i < stockProfileLen) {
       float r = stockProfile[i];
-      float amp = r * 0.02;
-      float yOffset = amp * sin(angularPos + i * 0.1);
-      vertex(chuckX + i, centerY + r + yOffset);
+      // STRAIGHT VISUALS - No wobble
+      vertex(chuckX + i, centerY + r);
     }
   }
   // Left face (chuck side)
@@ -695,9 +693,8 @@ void drawMainView() {
   noFill();
   beginShape();
   for (float px = 0; px < stockLenPx; px += 5) {
-    float amp = stockHPx * 0.25;
-    float yOffset = amp * sin(angularPos + px * 0.1);
-    vertex(chuckX + px, centerY + yOffset);
+    // STRAIGHT CENTERLINE - No wobble
+    vertex(chuckX + px, centerY);
   }
   endShape();
 
@@ -745,11 +742,21 @@ void drawMainView() {
 
   fill(255, 165, 0);
   stroke(0);
-  triangle(
-    toolTipXpx,              toolTipYpx,
-    toolTipXpx - tipW/2,     toolTipYpx + tipH,
-    toolTipXpx + tipW/2,     toolTipYpx + tipH
-  );
+  // Hyperbolic Tool Shape
+  beginShape();
+  float halfW = tipW / 2.0;
+  float slope = tipH / halfW;
+  // Draw left side, tip, right side
+  for (float tx = -halfW; tx <= halfW; tx += 1.0) {
+      float dist = abs(tx);
+      // Hyperbolic formula: sqrt((slope*x)^2 + R^2) - R
+      float yOffset = sqrt(pow(dist * slope, 2) + pow(toolTipRadiusPx, 2)) - toolTipRadiusPx;
+      vertex(toolTipXpx + tx, toolTipYpx + yOffset);
+  }
+  // Close the shape at the top
+  vertex(toolTipXpx + halfW, toolTipYpx + tipH);
+  vertex(toolTipXpx - halfW, toolTipYpx + tipH);
+  endShape(CLOSE);
 
   // --- Vertical shank below the tip ---
   float toolShankW = 12;
@@ -777,7 +784,6 @@ void drawMainView() {
   xPosIn = rawXIn - xZeroOffsetIn;
   zPosIn = rawZIn - zZeroOffsetIn;
   
-  // ----- Virtual Wall Force Rendering (Hapkit-style) -----
   // ----- Virtual Wall Force Rendering (Hapkit-style) -----
   // Calculate distance from tool tip to stock surface
   float toolTipDistFromCenter = abs(toolTipYpx - centerY);
@@ -810,8 +816,15 @@ void drawMainView() {
       }
       
       if (distFromFacePx < 0) {
-        axialCollision = true;
-        axialPenetration = abs(distFromFacePx) / pxPerIn * 0.0254;
+        // FIX: Only trigger Face Check haptics if we are CLOSE to the face (e.g. within tool width).
+        // If we are deep inside (distFromFacePx is large negative), we are likely in a groove/turning area.
+        // Let the V-Tool logic handle collisions there.
+        // Use tipW (approx 12px) as the threshold.
+        // DISABLE FACE CHECK HAPTICS - Unify under V-Tool Logic
+        // if (distFromFacePx > -tipW * 2.0) { 
+        //    axialCollision = true;
+        //    axialPenetration = abs(distFromFacePx) / pxPerIn * 0.0254;
+        // }
         
         // Material Removal with Yield Buffer
         float yieldBufferPx = 1.0;
@@ -827,15 +840,25 @@ void drawMainView() {
     
     // 2. Check Radial (Turning) - V-TOOL LOGIC
     // Iterate over the tool's width to check for collisions with the V-shape
+    // 2. Check Radial (Turning) - V-TOOL LOGIC
+    // Iterate over the tool's width to check for collisions with the V-shape
+    // tipW and tipH are already defined above
     float toolHalfWidth = tipW / 2.0;
-    int startZ = int(toolTipXpx - toolHalfWidth - chuckX);
-    int endZ = int(toolTipXpx + toolHalfWidth - chuckX);
+    // Expand range slightly to avoid integer snapping issues (half-profile bug)
+    int startZ = floor(toolTipXpx - toolHalfWidth - chuckX) - 2;
+    int endZ = ceil(toolTipXpx + toolHalfWidth - chuckX) + 2;
     
     // Clamp to stock bounds
     startZ = max(0, startZ);
     endZ = min(stockProfileLen - 1, endZ);
     
     float maxRadialPenetrationPx = 0;
+    float netAxialAreaPx = 0; // Net axial overlap area (sum of depths)
+    
+    // DEBUG
+    if (frameCount % 30 == 0 && radialCollision) {
+        println("DEBUG: startZ=" + startZ + ", endZ=" + endZ + ", toolTipXpx=" + toolTipXpx + ", chuckX=" + chuckX);
+    }
     
     for (int z = startZ; z <= endZ; z++) {
        // Calculate tool radius at this Z position (V-shape)
@@ -848,12 +871,25 @@ void drawMainView() {
        // Based on drawing: triangle((x-w/2, y+h), (x+w/2, y+h), (x, y))
        // So at tip (x), radius is toolTipYpx. At x +/- w/2, radius is toolTipYpx + tipH.
        // Slope ratio = tipH / (tipW/2)
-       float slope = tipH / (tipW / 2.0);
-       // FIX: Flanks are FURTHER from center than tip, so ADD the slope offset
-       float toolRadiusAtZ = toolTipDistFromCenter + (distFromTipX * slope);
+       float physicsSlope = tipH / (tipW / 2.0);
+       
+       // HYPERBOLIC TOOL PROFILE (Rounded Tip)
+       // Formula: offset = sqrt((slope*dist)^2 + R^2) - R
+       float hyperbolicOffset = sqrt(pow(distFromTipX * physicsSlope, 2) + pow(toolTipRadiusPx, 2)) - toolTipRadiusPx;
+       
+       float toolRadiusAtZ = toolTipDistFromCenter + hyperbolicOffset;
        
        // Check collision with stock
-       float currentStockRadius = stockProfile[z];
+       float currentStockRadius = 0;
+       
+       // CLIP PHYSICS TO VISUAL LENGTH
+       // If z is beyond the visual stock length, treat radius as 0 (air)
+       if (z < stockLenPx) {
+           currentStockRadius = stockProfile[z];
+       } else {
+           currentStockRadius = 0;
+       }
+       
        float distFromSurface = toolRadiusAtZ - currentStockRadius;
        
        if (distFromSurface < 0) {
@@ -864,34 +900,127 @@ void drawMainView() {
              maxRadialPenetrationPx = penPx;
           }
           
+          // AXIAL FORCE CALCULATION (Area-Based)
+          // Sum the penetration depths to get the Area of overlap
+          // Left Flank (z < toolTipXpx): Pushes tool RIGHT (+)
+          // Right Flank (z > toolTipXpx): Pushes tool LEFT (-)
+          
+          float axialComponent = 0;
+          if ((chuckX + z) < toolTipXpx) {
+             // Left side -> Push Right (+)
+             axialComponent = penPx; 
+          } else if ((chuckX + z) > toolTipXpx) {
+             // Right side -> Push Left (-)
+             axialComponent = -penPx;
+          }
+          netAxialAreaPx += axialComponent;
+          
           // Material Removal with Yield Buffer
           float yieldBufferPx = 1.0;
+          float newRadius = toolRadiusAtZ + yieldBufferPx;
+          
           if (penPx > yieldBufferPx) {
-             // Cut material down, leaving yieldBufferPx
-             stockProfile[z] = toolRadiusAtZ + yieldBufferPx;
+             // Cut material down (ONLY if new radius is smaller)
+             if (stockProfile[z] > newRadius) {
+                 stockProfile[z] = newRadius;
+             }
+             
+             // SYMMETRIC CUTTING ENFORCEMENT
+             // If we cut on one side, ensure the other side is also cut to preserve V-shape
+             // Calculate mirror Z index
+             float distFromTip = z - (toolTipXpx - chuckX);
+             int mirrorZ = int((toolTipXpx - chuckX) - distFromTip);
+             
+             if (mirrorZ >= 0 && mirrorZ < stockProfileLen && mirrorZ != z) {
+                 // Check if mirror point needs cutting
+                 // We must DECREASE radius to cut.
+                 if (stockProfile[mirrorZ] > newRadius) {
+                     stockProfile[mirrorZ] = newRadius;
+                 }
+             }
           }
        }
+    }
+    
+    // DEBUG: Print loop range and netArea
+    if (frameCount % 60 == 0 && (radialCollision || axialCollision)) {
+        println("🔍 LOOP DEBUG: startZ=" + startZ + ", endZ=" + endZ + ", toolTipXpx=" + toolTipXpx + ", chuckX=" + chuckX);
+        println("🔍 NetArea=" + netAxialAreaPx + ", radialColl=" + radialCollision + ", axialColl=" + axialCollision);
     }
     
     if (radialCollision) {
        radialPenetration = maxRadialPenetrationPx / pxPerIn * 0.0254;
     }
     
+    // Convert Net Area [px^2] to Effective Penetration [m] for Haptics
+    // Force should be proportional to Area.
+    // 1. Convert px^2 to m^2
+    float netAreaIn2 = netAxialAreaPx / (pxPerIn * pxPerIn);
+    float netAreaM2 = netAreaIn2 * 0.00064516; // 1 in^2 = 0.00064516 m^2
+    
+    // 2. Scale to Effective Penetration
+    // We want F = k * x_eff ~ Area.
+    // Heuristic: 1mm^2 Area (1e-6 m^2) should feel like ~1mm Penetration (1e-3 m)
+    // Scaling Factor = 1000.0 -> REDUCED to 100.0 to fix instability
+    float effectivePenetrationM = abs(netAreaM2) * 100.0;
+    
+    // If we have a net axial force, we should flag axial collision too?
+    if (effectivePenetrationM > 0.00001) { // Threshold
+       // Only override if not hitting the face (which is a hard stop)
+       if (!axialCollision) {
+          axialCollision = true;
+          axialPenetration = effectivePenetrationM;
+       }
+    }
+    
     // 3. Determine Haptic Feedback
     // If activeAxis is Z, we only feel Axial collisions
     // If activeAxis is X, we only feel Radial collisions
     
+    float forceSign = 0; // Declare variable for force direction
+    
     if (activeAxis.equals("Z") && axialCollision) {
        checkCollision = true;
        xh = axialPenetration;
-       println("🔴 AXIAL COLLISION (Z)");
+       
+       // FORCE DIRECTION LOGIC FOR Z-AXIS
+       // PICO LOGIC:
+       // wall_dir = 1  -> Pushes NEGATIVE (Left)
+       // wall_dir = -1 -> Pushes POSITIVE (Right)
+       // Bridge maps Force > 0 to wall_dir = 1, Force < 0 to wall_dir = -1.
+       
+       // Left Wall (net > 0): Want Push RIGHT (Positive). Need wall_dir = -1. Need Force < 0.
+       // Right Wall (net < 0): Want Push LEFT (Negative). Need wall_dir = 1. Need Force > 0.
+       
+       if (netAxialAreaPx > 0) {
+          forceSign = -1.0; // Push Right (Positive via wall_dir=-1)
+       } else if (netAxialAreaPx < 0) {
+          forceSign = 1.0;  // Push Left (Negative via wall_dir=1)
+       } else {
+          forceSign = -1.0; // Default
+       }
+       
+       println("🔴 AXIAL COLLISION (Z) - NetArea: " + netAxialAreaPx + ", Sign: " + forceSign);
     } else if (activeAxis.equals("X") && radialCollision) {
        checkCollision = true;
-       xh = radialPenetration;
-       println("🔴 RADIAL COLLISION (X)");
+       // Restore gain for Radial (it needs to be strong to feel the wall)
+       // Axial gain was reduced to 100.0, but Radial might need more?
+       // Let's try 500.0 as a middle ground
+       xh = radialPenetration * 5.0; // Boost radial penetration signal
+       
+       // Radial: Want Push OUT (Positive X).
+       // Handle Logic: Positive Delta (CW) = Move IN. Negative Delta (CCW) = Move OUT.
+       // We want to push OUT -> Push Negative (CCW).
+       // Pico Logic: wall_dir = 1 -> Push Negative (Left/CCW).
+       // So we need wall_dir = 1.
+       // Bridge Logic: Force > 0 -> wall_dir = 1.
+       // So we need Force > 0.
+       forceSign = 1.0; 
+       println("🔴 RADIAL COLLISION (X) - Pen: " + radialPenetration + ", ForceSign: " + forceSign);
     } else {
        checkCollision = false;
        xh = 0;
+       forceSign = 0;
     }
 
 
@@ -911,7 +1040,10 @@ void drawMainView() {
     // Cap force at maximum
     force = min(force, 50.0);  // Max 50N
     
-    collisionForce = map(force, 0, 50, 0, 100);  // Scale to 0-100 range
+    // Apply Direction Sign
+    force = force * forceSign;
+    
+    collisionForce = map(force, -50, 50, -100, 100);  // Scale to -100 to 100 range
     currentForce = force;  // Store actual force in Newtons
     toolCollision = true;
     
@@ -959,9 +1091,10 @@ void drawMainView() {
   // Visual feedback for collision
   if (toolCollision) {
     // Flash tool tip red when colliding
-    fill(255, 0, 0, 150);
-    noStroke();
-    ellipse(toolTipXpx, toolTipYpx, 20, 20);
+    // REMOVED per user request - logic is now side-aware
+    // fill(255, 0, 0, 150);
+    // noStroke();
+    // ellipse(toolTipXpx, toolTipYpx, 20, 20);
   }
 }
 

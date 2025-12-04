@@ -296,9 +296,19 @@ class LatheController:
                 
                 if self.haptic_active and self.pico_serial:
                     physical_force = (self.haptic_force / 100.0) * 50.0
-                    wall_active = 1 if physical_force > 0 else 0
-                    self.send_to_pico(f"spring_wall {physical_force:.2f} {wall_active} {self.vib_freq:.1f} {self.yield_force:.1f}")
-                    print(f"🧱 Wall: {physical_force:.1f}N, Freq: {self.vib_freq:.1f}Hz, Yield: {self.yield_force:.1f}N")
+                    
+                    # FIX: Handle negative forces correctly
+                    # wall_active needs to be non-zero to engage
+                    # Use sign of force as direction hint (1 or -1) * 2 to be safe > 1.0
+                    if abs(physical_force) > 0.1:
+                        wall_dir = 1 if physical_force >= 0 else -1
+                        wall_active = wall_dir * 2 
+                    else:
+                        wall_active = 0
+                        
+                    # Send absolute force magnitude, direction is handled by wall_active sign
+                    self.send_to_pico(f"spring_wall {abs(physical_force):.2f} {wall_active} {self.vib_freq:.1f} {self.yield_force:.1f}")
+                    print(f"🧱 Wall: {physical_force:.1f}N, Dir: {wall_active}, Freq: {self.vib_freq:.1f}Hz")
                 elif not self.haptic_active and self.pico_serial:
                     self.send_to_pico("spring_wall 0 0")
 
