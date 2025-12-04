@@ -39,6 +39,10 @@ float stockLengthIn   = 9.0;   // length of stock in inches
 float stockDiameterIn = 1.25;  // diameter of stock in inches
 float pxPerIn         = 60.0;  // scale factor: pixels per inch
 
+// Material Removal State
+float[] stockProfile; // Array storing radius (in pixels) at each Z-pixel
+int stockProfileLen;  // Length of the profile array
+
 // ===== BUTTON STATE BOOLEANS =====
 // Training scenario
 boolean facingSelected       = true;
@@ -124,10 +128,23 @@ void setup() {
   // Check if bridge is running by looking for status file
   checkBridgeConnection();
 
+  // Initialize stock profile for material removal
+  initStockProfile();
+
   // Send initial status request
   if (bridgeConnected) {
     sendToBridge("{\"type\":\"status_request\"}");
   }
+}
+
+void initStockProfile() {
+  stockProfileLen = int(stockLengthIn * pxPerIn) + 100; // Extra buffer
+  stockProfile = new float[stockProfileLen];
+  float radiusPx = (stockDiameterIn * pxPerIn) / 2.0;
+  for (int i = 0; i < stockProfileLen; i++) {
+    stockProfile[i] = radiusPx;
+  }
+  println("Stock profile initialized: " + stockProfileLen + " segments");
 }
 
 // ===== BRIDGE COMMUNICATION FUNCTIONS =====
@@ -1021,6 +1038,8 @@ void mousePressed() {
   if (overRect(innerX, innerY - 11, 180, 22)) {
     resetFlashStart = millis();
     sendToBridge("{\"type\":\"reset\"}");
+    initStockProfile(); // Reset the visual stock
+    println("Reset Workpiece clicked - stock profile reset");
   }
 
   // Zero X (momentary, zero readout only)
