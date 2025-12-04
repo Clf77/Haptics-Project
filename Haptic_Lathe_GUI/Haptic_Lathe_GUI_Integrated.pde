@@ -117,6 +117,11 @@ float currentToolZ = 0;      // Current Z position (pixels)
 float lastHandlePosition = 0; // Last read encoder position
 boolean firstBridgeUpdate = true; // Flag to sync handle
 
+// Previous tool position for interpolation
+float prevToolTipXpx = 0;
+float prevToolTipYpx = 0;
+boolean firstFrame = true;
+
 void setup() {
   size(1280, 720);
   smooth();
@@ -436,12 +441,18 @@ void handleMotorControlClicks() {
   // Check speed buttons (Row 2)
   motorY += btnH + spacing;
   if (overRect(motorX, motorY, btnW, btnH)) {
+    spindleRPM = 30;
+    spindleStr = "30";
     sendToBridge("{\"type\":\"motor_control\",\"action\":\"speed\",\"value\":30}");
     println("Motor Speed: Slow");
   } else if (overRect(motorX + btnW + spacing, motorY, btnW, btnH)) {
+    spindleRPM = 100;
+    spindleStr = "100";
     sendToBridge("{\"type\":\"motor_control\",\"action\":\"speed\",\"value\":100}");
     println("Motor Speed: Medium");
   } else if (overRect(motorX + 2*(btnW + spacing), motorY, btnW, btnH)) {
+    spindleRPM = 200;
+    spindleStr = "200";
     sendToBridge("{\"type\":\"motor_control\",\"action\":\"speed\",\"value\":200}");
     println("Motor Speed: Fast");
   }
@@ -525,8 +536,6 @@ String getSkillLevel() {
   if (advancedSelected) return "advanced";
   return "beginner";
 }
-
-// Modify drawMainView() to use physical handle position
 void drawMainView() {
   float x = leftPanelW;
   float y = headerH;
@@ -635,8 +644,7 @@ void drawMainView() {
   float stockLenPx = stockLengthIn   * pxPerIn;
   float stockHPx   = stockDiameterIn * pxPerIn;
 
-  // Keep stock from overflowing the workspace too crazily
-  // stockLenPx = min(stockLenPx, innerW * 0.75); // Removed to allow facing visualization
+  // Allow full length so facing is visible
   stockHPx   = min(stockHPx, workspaceH * 0.6);
 
   // Chuck
@@ -646,121 +654,91 @@ void drawMainView() {
   line(chuckX - chuckW, centerY - 30, chuckX, centerY - 15);
   line(chuckX - chuckW, centerY + 30, chuckX, centerY + 15);
 
-  // Stock (simulated rotation)
-  float stockRightX = chuckX + stockLenPx;
-  float stockBottomY = centerY + stockHPx / 2;
-  float stockTopY    = centerY - stockHPx / 2;
-  float stockRadiusPx = stockHPx / 2.0;  // Define radius early for use in tool positioning
+  // Stock geometry
+  float stockRightX   = chuckX + stockLenPx;
+  float stockRadiusPx = stockHPx / 2.0;
 
-  // Simulated rotation (simple sine wave for demo)
-  float t = millis() / 1000.0;
-  float angularPos = TWO_PI * spindleRPM * t / 60.0;
-
+  // ===== STATIC STOCK, NO WOBBLE =====
   fill(180);
   stroke(0);
-  
-  // Render Stock Profile using beginShape
   beginShape();
   // Top edge
   for (int i = 0; i < stockLenPx; i++) {
     if (i < stockProfileLen) {
       float r = stockProfile[i];
-      // Add rotation effect
-      float amp = r * 0.02; // Small wobble
-      float yOffset = amp * sin(angularPos + i * 0.1);
-      vertex(chuckX + i, centerY - r + yOffset);
+      vertex(chuckX + i, centerY - r);   // no yOffset
     }
   }
   // Right face
   float lastR = (stockLenPx < stockProfileLen) ? stockProfile[int(stockLenPx)-1] : 0;
   vertex(chuckX + stockLenPx, centerY - lastR);
   vertex(chuckX + stockLenPx, centerY + lastR);
-  
   // Bottom edge
   for (int i = int(stockLenPx) - 1; i >= 0; i--) {
     if (i < stockProfileLen) {
       float r = stockProfile[i];
-      float amp = r * 0.02;
-      float yOffset = amp * sin(angularPos + i * 0.1);
-      vertex(chuckX + i, centerY + r + yOffset);
+      vertex(chuckX + i, centerY + r);   // no yOffset
     }
   }
   // Left face (chuck side)
-  vertex(chuckX, centerY + stockHPx/2); 
+  vertex(chuckX, centerY + stockHPx/2);
   vertex(chuckX, centerY - stockHPx/2);
   endShape(CLOSE);
 
-  // Draw a wavy line to simulate rotating stock
-  stroke(0);
-  noFill();
-  beginShape();
-  for (float px = 0; px < stockLenPx; px += 5) {
-    float amp = stockHPx * 0.25;
-    float yOffset = amp * sin(angularPos + px * 0.1);
-    vertex(chuckX + px, centerY + yOffset);
-  }
-  endShape();
+  // Optional: simple centerline instead of wavy line
+  stroke(100);
+  line(chuckX, centerY, chuckX + stockLenPx, centerY);
 
+  // ===== TOOL MOTION & HAPTICS (unchanged) =====
   // Update tool position based on input mode and active axis
   if (usePhysicalInput && bridgeConnected) {
-    // Relative positioning logic
     if (firstBridgeUpdate) {
-      // First update - just sync the handle position
       lastHandlePosition = physicalHandlePosition;
       firstBridgeUpdate = false;
     } else {
-      // Calculate delta
       float delta = physicalHandlePosition - lastHandlePosition;
       lastHandlePosition = physicalHandlePosition;
-      
-      // Apply movement scale (sensitivity)
-      float movementScale = 1.0; 
-      
+
+      float movementScale = 1.0;
       if (activeAxis.equals("Z")) {
-        // Z-axis (axial): Move tool along Z
-        // Positive delta = Move Right (Positive Z)
         currentToolZ += delta * movementScale;
       } else {
-        // X-axis (radial): Move tool in/out
-        // Positive delta (CW) = Move IN (Negative X / smaller diameter)
-        // Negative delta (CCW) = Move OUT (Positive X / larger diameter)
         currentToolX -= delta * movementScale;
       }
     }
-    
-    // Update display coordinates from logical coordinates
     toolTipXpx = currentToolZ;
     toolTipYpx = currentToolX;
-    
   } else {
-    // Default position when not using physical input - OUTSIDE stock
-    // Or just keep last known position
     toolTipXpx = currentToolZ;
     toolTipYpx = currentToolX;
   }
 
-  // --- Orange cutting tip (triangle) pointing upward ---
-  float tipW = 12;
-  float tipH = 10;
+  // --- Tool dimensions ---
+  float toolShankW = 12;
+  float toolShankH = 60;
+  
+  // --- Orange cutting tip (right triangle pointing UP) ---
+  float tipL = 12;  // length of triangle (matches shank width)
+  float tipH = 10;  // height of triangle
 
   fill(255, 165, 0);
   stroke(0);
   triangle(
-    toolTipXpx,              toolTipYpx,
-    toolTipXpx - tipW/2,     toolTipYpx + tipH,
-    toolTipXpx + tipW/2,     toolTipYpx + tipH
+    toolTipXpx - toolShankW/2,         toolTipYpx,              // top point (cutting tip)
+    toolTipXpx - toolShankW/2,         toolTipYpx + tipH,       // bottom left (vertical edge)
+    toolTipXpx - toolShankW/2 + tipL,  toolTipYpx + tipH        // bottom right
   );
 
-  // --- Vertical shank below the tip ---
-  float toolShankW = 12;
-  float toolShankH = 60;
+  // --- Vertical shank below the insert ---
   float toolShankX = toolTipXpx - toolShankW / 2;
   float toolShankY = toolTipYpx + tipH;
 
-  fill(180);
-  stroke(0);
-  rect(toolShankX, toolShankY, toolShankW, toolShankH);
+fill(180);
+stroke(0);
+rect(toolShankX, toolShankY, toolShankW, toolShankH);
 
+
+  
   // Tool post position
   float postCenterX = toolTipXpx;
   float postCenterY = toolShankY + toolShankH + 40 - 10;
@@ -772,198 +750,110 @@ void drawMainView() {
   // ----- Compute tool X/Z positions in inches from toolTip and geometry -----
   rawZIn = (toolTipXpx - chuckX) / pxPerIn;
   rawXIn = (centerY - toolTipYpx) / pxPerIn;
-
-  // Apply zero offsets for displayed readout
   xPosIn = rawXIn - xZeroOffsetIn;
   zPosIn = rawZIn - zZeroOffsetIn;
-  
-  // ----- Virtual Wall Force Rendering (Hapkit-style) -----
-  // ----- Virtual Wall Force Rendering (Hapkit-style) -----
-  // Calculate distance from tool tip to stock surface
-  float toolTipDistFromCenter = abs(toolTipYpx - centerY);
-  // stockRadiusPx already defined above
-  
-  float xh = 0.0; // Penetration in meters
-  boolean checkCollision = false;
 
-    float collisionMargin = 2.0; // 2px margin for robust detection
-
-    // INTELLIGENT CUTTING LOGIC
-    // Check BOTH Axial (Facing) and Radial (Turning) collisions
-    // Apply haptics based on which one is happening (or prioritized)
+  // ----- Collision Detection & Stock Removal -----
+  toolCollision = false;
+  float maxPenetration = 0;
+  
+  // Interpolate between previous and current position to avoid missing material
+  int interpSteps = firstFrame ? 1 : 10; // More steps = smoother cutting, no spikes
+  
+  for (int step = 0; step < interpSteps; step++) {
+    float t = interpSteps == 1 ? 1.0 : (float)step / (float)(interpSteps - 1);
     
-    boolean axialCollision = false;
-    boolean radialCollision = false;
-    float axialPenetration = 0;
-    float radialPenetration = 0;
+    // Interpolated tool position
+    float interpToolTipX = firstFrame ? toolTipXpx : lerp(prevToolTipXpx, toolTipXpx, t);
+    float interpToolTipY = firstFrame ? toolTipYpx : lerp(prevToolTipYpx, toolTipYpx, t);
     
-    // 1. Check Axial (Facing)
-    int faceIdx = int(stockLenPx) - 1;
-    float faceRadius = (faceIdx >= 0 && faceIdx < stockProfileLen) ? stockProfile[faceIdx] : 0;
+    // Check collision along the vertical left edge of the triangle
+    float cuttingEdgeX = interpToolTipX - toolShankW/2;
     
-    if (toolTipDistFromCenter <= faceRadius + collisionMargin) {
-      float distFromFacePx = toolTipXpx - stockRightX;
+    // Sample multiple points along the vertical cutting edge
+    int numSamples = 5;
+    for (int i = 0; i <= numSamples; i++) {
+      float sampleY = interpToolTipY + (tipH * i / numSamples);
       
-      // DEBUG FACING
-      if (frameCount % 60 == 0) {
-         println("Face Check: Dist=" + distFromFacePx + ", Radial=" + toolTipDistFromCenter + " vs " + faceRadius);
-      }
+      // Convert to radial distance from centerline
+      float toolRadialDist = abs(centerY - sampleY);
       
-      if (distFromFacePx < 0) {
-        axialCollision = true;
-        axialPenetration = abs(distFromFacePx) / pxPerIn * 0.0254;
+      // Get Z position in stock coordinates
+      float zPosInStock = cuttingEdgeX - chuckX;
+      
+      // Check if this point is within the stock length
+      if (zPosInStock >= 0 && zPosInStock < stockLenPx) {
+        int stockIndex = int(zPosInStock);
         
-        // Material Removal with Yield Buffer
-        float yieldBufferPx = 1.0;
-        float penPx = abs(distFromFacePx);
-        if (penPx > yieldBufferPx) {
-           // Cut material down, leaving yieldBufferPx
-           stockLengthIn -= (penPx - yieldBufferPx) / pxPerIn; 
-           stockLenPx = stockLengthIn * pxPerIn;
-           stockRightX = chuckX + stockLenPx;
+        if (stockIndex >= 0 && stockIndex < stockProfileLen) {
+          float currentStockRadius = stockProfile[stockIndex];
+          
+          // Check if tool is penetrating the stock
+          if (toolRadialDist < currentStockRadius) {
+            toolCollision = true;
+            float penetration = currentStockRadius - toolRadialDist;
+            maxPenetration = max(maxPenetration, penetration);
+            
+            // Spindle-dependent behavior
+            if (spindleRPM > 0) {
+               // Cutting: Remove material - update stock profile to new radius
+               stockProfile[stockIndex] = min(stockProfile[stockIndex], toolRadialDist);
+            } else {
+               // Spindle Stopped: Virtual Wall (Do NOT remove material)
+               // Penetration remains high, creating a stiff spring force
+            }
+          }
         }
       }
     }
-    
-    // 2. Check Radial (Turning) - V-TOOL LOGIC
-    // Iterate over the tool's width to check for collisions with the V-shape
-    float toolHalfWidth = tipW / 2.0;
-    int startZ = int(toolTipXpx - toolHalfWidth - chuckX);
-    int endZ = int(toolTipXpx + toolHalfWidth - chuckX);
-    
-    // Clamp to stock bounds
-    startZ = max(0, startZ);
-    endZ = min(stockProfileLen - 1, endZ);
-    
-    float maxRadialPenetrationPx = 0;
-    
-    for (int z = startZ; z <= endZ; z++) {
-       // Calculate tool radius at this Z position (V-shape)
-       // Tool is a triangle with tip at toolTipXpx
-       float distFromTipX = abs((chuckX + z) - toolTipXpx);
-       
-       // Slope is determined by tipW and tipH. 
-       // tipH is height of the triangle, tipW is width at base? 
-       // Actually tipH is just the visual height. Let's assume 60 degree tool or similar.
-       // Based on drawing: triangle((x-w/2, y+h), (x+w/2, y+h), (x, y))
-       // So at tip (x), radius is toolTipYpx. At x +/- w/2, radius is toolTipYpx + tipH.
-       // Slope ratio = tipH / (tipW/2)
-       float slope = tipH / (tipW / 2.0);
-       // FIX: Flanks are FURTHER from center than tip, so ADD the slope offset
-       float toolRadiusAtZ = toolTipDistFromCenter + (distFromTipX * slope);
-       
-       // Check collision with stock
-       float currentStockRadius = stockProfile[z];
-       float distFromSurface = toolRadiusAtZ - currentStockRadius;
-       
-       if (distFromSurface < 0) {
-          radialCollision = true;
-          float penPx = abs(distFromSurface);
-          
-          if (penPx > maxRadialPenetrationPx) {
-             maxRadialPenetrationPx = penPx;
-          }
-          
-          // Material Removal with Yield Buffer
-          float yieldBufferPx = 1.0;
-          if (penPx > yieldBufferPx) {
-             // Cut material down, leaving yieldBufferPx
-             stockProfile[z] = toolRadiusAtZ + yieldBufferPx;
-          }
-       }
-    }
-    
-    if (radialCollision) {
-       radialPenetration = maxRadialPenetrationPx / pxPerIn * 0.0254;
-    }
-    
-    // 3. Determine Haptic Feedback
-    // If activeAxis is Z, we only feel Axial collisions
-    // If activeAxis is X, we only feel Radial collisions
-    
-    if (activeAxis.equals("Z") && axialCollision) {
-       checkCollision = true;
-       xh = axialPenetration;
-       println("🔴 AXIAL COLLISION (Z)");
-    } else if (activeAxis.equals("X") && radialCollision) {
-       checkCollision = true;
-       xh = radialPenetration;
-       println("🔴 RADIAL COLLISION (X)");
-    } else {
-       checkCollision = false;
-       xh = 0;
-    }
-
-
-  // Virtual wall parameters
-  float wall_position = 0.0;  // Wall is at surface (0mm penetration)
-  float k_wall = 100000.0;    // Wall stiffness [N/m]
-
-  // Calculate force using Hapkit virtual wall algorithm
-  float force = 0.0;
-  boolean wasColliding = toolCollision; // Capture previous state
-  
-  if (checkCollision) {
-    // Penetrating virtual wall
-    float penetration = xh;  // Positive penetration depth
-    force = k_wall * penetration;  // Positive force pushes back
-    
-    // Cap force at maximum
-    force = min(force, 50.0);  // Max 50N
-    
-    collisionForce = map(force, 0, 50, 0, 100);  // Scale to 0-100 range
-    currentForce = force;  // Store actual force in Newtons
-    toolCollision = true;
-    
-    println("🔴 COLLISION (" + activeAxis + "): pen=" + (penetration*1000) + "mm, F=" + force + "N");
-  } else {
-    // Outside virtual wall - no force
-    force = 0.0;
-    collisionForce = 0.0;
-    currentForce = 0.0;
-    toolCollision = false;
-  }
-
-  // Send haptic feedback to motor
-  if (bridgeConnected) {
-    boolean forceChanged = abs(collisionForce - lastSentForce) > 1.0; // Update if force changes by > 1%
-    
-    // Calculate SFM (Surface Feet per Minute)
-    // Diameter = 2 * Radius (rawXIn is radius in inches)
-    float currentDiameterIn = 2.0 * rawXIn;
-    float sfm = (spindleRPM * currentDiameterIn * PI) / 12.0;
-    
-    // Map SFM to Vibration Frequency
-    // 10 SFM -> 10 Hz
-    // 1000 SFM -> 200 Hz
-    float vibFreq = map(sfm, 10, 1000, 10, 200);
-    vibFreq = constrain(vibFreq, 10, 200);
-
-    if (toolCollision) {
-      if (!wasColliding || forceChanged) {
-        // Entered wall OR force changed significantly while in wall
-        // Yield force: 15N for cutting (allows wall to move if pushed harder)
-        float yieldForce = 15.0; 
-        sendToBridge("{\"type\":\"haptic_feedback\",\"force\":" + collisionForce + ",\"active\":true,\"freq\":" + vibFreq + ",\"yield\":" + yieldForce + "}");
-        lastSentForce = collisionForce;
-        if (!wasColliding) println("🧱 VIRTUAL WALL ENTERED (SFM=" + nf(sfm,0,1) + ", Freq=" + nf(vibFreq,0,1) + "Hz)");
-      }
-    } else if (wasColliding) {
-      // Just exited virtual wall - release
-      sendToBridge("{\"type\":\"haptic_feedback\",\"force\":0,\"active\":false,\"freq\":10}");
-      lastSentForce = 0.0;
-      println("✅ Virtual wall exited - no resistance");
-    }
   }
   
-  // Visual feedback for collision
+  // Store current position for next frame's interpolation
+  prevToolTipXpx = toolTipXpx;
+  prevToolTipYpx = toolTipYpx;
+  firstFrame = false;
+  
+  // Calculate and send haptic feedback based on collision
   if (toolCollision) {
-    // Flash tool tip red when colliding
-    fill(255, 0, 0, 150);
-    noStroke();
-    ellipse(toolTipXpx, toolTipYpx, 20, 20);
+    if (spindleRPM > 0) {
+      // Cutting Force: Proportional to depth of cut (chip load)
+      // Since we remove material instantly, maxPenetration captures the "cut depth" for this frame
+      currentForce = maxPenetration * 40.0; 
+      
+      // Add texture vibration if cutting
+      float vibrationFreq = spindleRPM / 60.0; 
+      float vibrationAmp = currentForce * 0.3; 
+      float vibration = sin(millis() / 1000.0 * vibrationFreq * TWO_PI) * vibrationAmp;
+      currentForce += vibration;
+      
+    } else {
+      // Virtual Wall Force: Stiffer spring to resist penetration
+      currentForce = maxPenetration * 150.0; // Higher stiffness for wall
+    }
+    
+    currentForce = constrain(currentForce, 0, 100); // Limit max force
+    
+    // Send force command to bridge if it changed significantly
+    if (abs(currentForce - lastSentForce) > 1.0) {
+      JSONObject forceCmd = new JSONObject();
+      forceCmd.setString("type", "set_force");
+      forceCmd.setFloat("force", currentForce);
+      sendToBridge(forceCmd.toString());
+      lastSentForce = currentForce;
+    }
+  } else {
+    // No collision - release force
+    if (lastSentForce > 0) {
+      JSONObject forceCmd = new JSONObject();
+      forceCmd.setString("type", "set_force");
+      forceCmd.setFloat("force", 0.0);
+      sendToBridge(forceCmd.toString());
+      lastSentForce = 0;
+      currentForce = 0;
+    }
   }
 }
+
 
 // ----------------------------------------------------
 // HEADER

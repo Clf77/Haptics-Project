@@ -4,7 +4,7 @@ import sys
 import os
 
 # Configuration
-PORT = '/dev/cu.usbmodem2134101'
+PORT = '/dev/cu.usbmodem14334101'
 BAUD = 115200
 
 def write_file(ser, local_path, remote_path):

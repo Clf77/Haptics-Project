@@ -298,9 +298,16 @@ class LatheController:
                     physical_force = (self.haptic_force / 100.0) * 50.0
                     wall_active = 1 if physical_force > 0 else 0
                     self.send_to_pico(f"spring_wall {physical_force:.2f} {wall_active} {self.vib_freq:.1f} {self.yield_force:.1f}")
-                    print(f"🧱 Wall: {physical_force:.1f}N, Freq: {self.vib_freq:.1f}Hz, Yield: {self.yield_force:.1f}N")
-                elif not self.haptic_active and self.pico_serial:
-                    self.send_to_pico("spring_wall 0 0")
+
+            elif cmd_type == "set_force":
+                force_val = float(data.get("force", 0.0))
+                # Map 0-100 force to 0-50 physical force (approx)
+                physical_force = (force_val / 100.0) * 50.0
+                wall_active = 1 if physical_force > 0 else 0
+                
+                # Send to Pico
+                self.send_to_pico(f"spring_wall {physical_force:.2f} {wall_active}")
+                # print(f"Force set to {force_val} -> {physical_force:.2f}")
 
         except json.JSONDecodeError as e:
             print(f"Error processing GUI command: {e}")
