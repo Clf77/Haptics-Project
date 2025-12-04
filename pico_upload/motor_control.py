@@ -367,7 +367,10 @@ class MotorController:
         self.haptic_brake_percent = 0.0
 
     def virtual_wall_control(self):
-        """POSITION-BASED virtual wall - holds position with reasonable PID gains."""
+        """DAMPING-BASED CUTTING FEEDBACK
+        Based on Hapkit template: force = -velocity * cdamping
+        Only active when inside the material (penetration > 0).
+        """
         if not self.wall_engaged:
             return
 
@@ -377,113 +380,67 @@ class MotorController:
         # Calculate penetration depth (how far past the wall surface)
         penetration_deg = (current_pos - self.wall_contact_position_deg) * self.wall_direction
 
-        # If we're at or outside the wall surface (user backed out), free the motor
+        # If we're outside the wall surface (not cutting), free the motor
         if penetration_deg < self.wall_release_tol_deg:
             self.motor_ena.duty_u16(0)
             self.motor_in1.value(0)
             self.motor_in2.value(0)
             return
 
-        # USER IS PENETRATING THE WALL - USE SPRING FORCE MODEL (Hapkit Style)
-        # Implements F = -k * x logic from virtual_effects_template.ino
+        # USER IS CUTTING - Apply damping
         
-        # 1. Calculate penetration distance in meters
-        # Assume a handle radius (rh) to map rotation to linear distance
-        rh = 0.05  # [m] Effective handle radius (5 cm as per user)
+        # Calculate velocity in m/s at the handle (like Hapkit dxh)
+        rh = 0.05  # [m] Handle radius
+        velocity_rpm = self.get_velocity_rpm()
+        # Convert RPM to m/s: RPM -> rad/s -> m/s
+        velocity_mps = (velocity_rpm / 60.0) * 2 * math.pi * rh
         
-        # penetration_deg is how far "inside" the wall we are
-        # Convert to radians then meters
-        x_penetration = (penetration_deg * math.pi / 180.0) * rh
+        # Apply IIR filter like Hapkit: dxh_filt = 0.9*dxh + 0.1*dxh_prev
+        if not hasattr(self, 'dxh_filt'):
+            self.dxh_filt = 0.0
+            self.dxh_prev = 0.0
+        self.dxh_filt = 0.9 * velocity_mps + 0.1 * self.dxh_prev
+        self.dxh_prev = velocity_mps
         
-        # 2. Calculate Spring Force (Hooke's Law)
-        # k = Stiffness [N/m]
-        # Use a fixed stiffness similar to the template (200 N/m) 
-        # or scale with the requested force if desired. 
-        # The template uses k=200.0.
-        k = 400.0 
+        # DAMPING FORCE: F = -cdamping * velocity
+        # Reference uses cdamping = 5.0 N*s/m, we scale up for our system
+        cdamping = 500.0  # [N*s/m] - Tunable damping coefficient
         
-        # Force is proportional to penetration
-        force = k * x_penetration  # [N] Magnitude of restoring force
-
-        # --- DAMPING MODEL (Viscous Fluid) ---
-        # REMOVED - Reverted to Spring Model
+        # Scale damping by penetration depth for cutting feel
+        # Deeper = more resistance
+        x_penetration = (penetration_deg * math.pi / 180.0) * rh  # [m]
+        depth_scale = min(x_penetration / 0.005, 2.0)  # Scale from 0-2x based on 5mm depth
         
-        # Cap force
-        # force = min(force, 50.0)
-
-        # --- YIELDING LOGIC (CUTTING) ---
-        # If force exceeds yield_force, move the wall anchor (plastic deformation)
-        if force > self.yield_force:
-            # We want force to be yield_force
-            # yield_force = k * new_x_penetration
-            new_x_penetration = self.yield_force / k
-            
-            # Convert back to degrees
-            new_penetration_deg = (new_x_penetration / rh) * (180.0 / math.pi)
-            
-            # Update wall contact position to maintain this penetration
-            # penetration_deg = (current_pos - wall_contact) * direction
-            # wall_contact = current_pos - (penetration_deg * direction)
-            self.wall_contact_position_deg = current_pos - (new_penetration_deg * self.wall_direction)
-            
-            # Cap the force for this step
-            force = self.yield_force
-        # --------------------------------
-
-        # --- VIBRATION EFFECT ---
-        # Add sinusoidal vibration scaled by force to simulate cutting texture
-        # Frequency: Variable based on surface speed (SFM)
-        # Amplitude: 10% of current wall force (Reduced)
-        # Amplitude: 5% of current wall force (Dynamic)
-        vib_amp_scale = 0.05
-        t_sec = time.ticks_ms() / 1000.0
-        vibration = force * vib_amp_scale * math.sin(2 * math.pi * self.vib_freq * t_sec)
-        force += vibration
-        force = max(0.0, force) # Clamp to ensure we don't pull into wall
-        # ------------------------
+        force = -self.dxh_filt * cdamping * (1.0 + depth_scale)
         
-        # 3. Calculate Motor Torque
-        # Torque at handle = Force * radius
-        # Torque at motor = Torque at handle / Gear Ratio
-        torque_handle = force * rh
-        torque_motor = torque_handle / self.gear_ratio
+        # Cap force magnitude
+        force = max(-50.0, min(50.0, force))
         
-        # 4. Convert Torque to Duty Cycle (Hapkit Non-linear Mapping)
-        # Template: duty = sqrt(abs(Tp)/0.03)
-        # This compensates for motor/driver non-linearities
-        if torque_motor > 0:
-            duty_cycle = math.sqrt(torque_motor / 0.03)
-        else:
-            duty_cycle = 0.0
-            
-        # Clamp duty cycle
-        duty_cycle = min(duty_cycle, 1.0)
+        # Calculate motor torque (Hapkit formula)
+        Tp = force * rh / self.gear_ratio
         
-        # 5. Apply to Motor
-        # Determine direction: Push OUT of the wall
-        # If wall_direction is 1 (positive is in), we push negative (0)
-        # If wall_direction is -1 (negative is in), we push positive (1)
+        # Convert torque to duty cycle (Hapkit non-linear mapping)
+        duty = math.sqrt(abs(Tp) / 0.03) if abs(Tp) > 0 else 0.0
+        duty = min(duty, 1.0)
         
-        # Logic check:
-        # If wall_dir = 1, we are at pos > wall. We want to move negative.
-        # Motor direction for negative speed: IN1=0, IN2=1 (from set_motor_speed)
-        # If wall_dir = -1, we are at pos < wall. We want to move positive.
-        # Motor direction for positive speed: IN1=1, IN2=0
-        
-        push_positive = (self.wall_direction == -1)
-        
-        if push_positive:
+        # Set motor direction based on force sign (oppose motion)
+        if force > 0:
             self.motor_in1.value(1)
             self.motor_in2.value(0)
         else:
             self.motor_in1.value(0)
             self.motor_in2.value(1)
-            
-        # Convert duty to PWM
-        duty_value = int(self.min_pwm + (self.max_pwm - self.min_pwm) * duty_cycle)
+        
+        # Apply PWM
+        duty_value = int(self.min_pwm + (self.max_pwm - self.min_pwm) * duty)
         self.motor_ena.duty_u16(duty_value)
-
-        # print(f"🧱 WALL: pen={x_penetration*1000:.1f}mm, F={force:.1f}N, T_m={torque_motor:.3f}Nm, D={duty_cycle:.2f}")
+        
+        # Rate limit debug output (every 50 loops = ~0.5s)
+        if not hasattr(self, "debug_counter"):
+            self.debug_counter = 0
+        self.debug_counter += 1
+        if self.debug_counter % 50 == 0:
+            print(f"🧱 CUT: v={self.dxh_filt:.4f}m/s, depth={x_penetration*1000:.1f}mm, F={force:.2f}N, D={duty:.2f}")
 
     def set_pid_gains(self, kp, ki, kd):
         """Set PID gains for position control"""

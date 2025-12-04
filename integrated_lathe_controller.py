@@ -420,6 +420,9 @@ class LatheController:
             try:
                 line = self.pico_serial.readline().decode().strip()
                 if line:
+                    # Print everything from Pico for debugging
+                    print(f"[PICO] {line}")
+                    
                     # Parse status updates
                     if "Position:" in line:
                         # Parse: Position: -135.94 degrees, Velocity: ...

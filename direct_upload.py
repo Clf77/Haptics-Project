@@ -4,8 +4,31 @@ import sys
 import os
 
 # Configuration
-PORT = '/dev/cu.usbmodem134101'
+import serial.tools.list_ports
+
+# Configuration
 BAUD = 115200
+
+def find_pico_port():
+    """Find the Pico's serial port automatically."""
+    ports = list(serial.tools.list_ports.comports())
+    print(f"Available ports: {[p.device for p in ports]}")
+    
+    # Look for likely candidates
+    candidates = []
+    for p in ports:
+        # macOS Pico usually shows up as usbmodem
+        if "usbmodem" in p.device:
+            candidates.append(p.device)
+        # Linux/Windows might show up differently, but usbmodem is key for Mac
+        elif "Board in FS mode" in p.description or "MicroPython" in p.description:
+            candidates.append(p.device)
+            
+    if not candidates:
+        return None
+        
+    # Return the first candidate
+    return candidates[0]
 
 def write_file(ser, local_path, remote_path):
     print(f"Uploading {local_path} to {remote_path}...")
@@ -14,10 +37,16 @@ def write_file(ser, local_path, remote_path):
         content = f.read()
     
     # Enter Raw REPL
+    print("Interrupting running program...")
     ser.write(b'\x03') # Ctrl+C
-    time.sleep(0.1)
-    ser.write(b'\x01') # Ctrl+A
-    time.sleep(0.1)
+    time.sleep(0.5)
+    ser.write(b'\x03') # Ctrl+C again
+    time.sleep(0.5)
+    ser.write(b'\x03') # Ctrl+C third time
+    time.sleep(0.5)
+    
+    ser.write(b'\x01') # Ctrl+A (Enter Raw REPL)
+    time.sleep(0.5)
     if not b'raw REPL' in ser.read_all():
         print("Failed to enter raw REPL")
         return False
@@ -53,14 +82,22 @@ def write_file(ser, local_path, remote_path):
 
 def main():
     try:
-        ser = serial.Serial(PORT, BAUD, timeout=1)
+        port = find_pico_port()
+        if not port:
+            print("Error: No Pico found (looked for 'usbmodem')")
+            print("Please check connection or update find_pico_port()")
+            return
+
+        print(f"Using port: {port}")
+        
+        ser = serial.Serial(port, BAUD, timeout=1)
         write_file(ser, "pico_upload/motor_control.py", "motor_control.py")
         write_file(ser, "pico_upload/main.py", "main.py")
         ser.close()
         
         # Soft reset
         print("Resetting...")
-        with serial.Serial(PORT, BAUD, timeout=1) as ser:
+        with serial.Serial(port, BAUD, timeout=1) as ser:
             ser.write(b'\x04') # Ctrl+D
             
     except Exception as e:
