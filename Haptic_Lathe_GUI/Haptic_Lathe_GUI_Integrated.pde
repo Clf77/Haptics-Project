@@ -844,9 +844,13 @@ void drawMainView() {
     // Iterate over the tool's width to check for collisions with the V-shape
     // tipW and tipH are already defined above
     float toolHalfWidth = tipW / 2.0;
-    // Expand range slightly to avoid integer snapping issues (half-profile bug)
-    int startZ = floor(toolTipXpx - toolHalfWidth - chuckX) - 2;
-    int endZ = ceil(toolTipXpx + toolHalfWidth - chuckX) + 2;
+    // SNAP TOOL TO INTEGER GRID FOR SYMMETRY
+    // This prevents sub-pixel bias where one side cuts deeper than the other.
+    float effectiveToolX = round(toolTipXpx);
+    
+    // Determine loop range based on snapped position
+    int startZ = floor(effectiveToolX - toolHalfWidth - chuckX) - 2;
+    int endZ = ceil(effectiveToolX + toolHalfWidth - chuckX) + 2;
     
     // Clamp to stock bounds
     startZ = max(0, startZ);
@@ -861,82 +865,67 @@ void drawMainView() {
     }
     
     for (int z = startZ; z <= endZ; z++) {
-       // Calculate tool radius at this Z position (V-shape)
-       // Tool is a triangle with tip at toolTipXpx
-       float distFromTipX = abs((chuckX + z) - toolTipXpx);
-       
-       // Slope is determined by tipW and tipH. 
-       // tipH is height of the triangle, tipW is width at base? 
-       // Actually tipH is just the visual height. Let's assume 60 degree tool or similar.
-       // Based on drawing: triangle((x-w/2, y+h), (x+w/2, y+h), (x, y))
-       // So at tip (x), radius is toolTipYpx. At x +/- w/2, radius is toolTipYpx + tipH.
-       // Slope ratio = tipH / (tipW/2)
-       float physicsSlope = tipH / (tipW / 2.0);
-       
-       // HYPERBOLIC TOOL PROFILE (Rounded Tip)
-       // Formula: offset = sqrt((slope*dist)^2 + R^2) - R
-       float hyperbolicOffset = sqrt(pow(distFromTipX * physicsSlope, 2) + pow(toolTipRadiusPx, 2)) - toolTipRadiusPx;
-       
-       float toolRadiusAtZ = toolTipDistFromCenter + hyperbolicOffset;
-       
-       // Check collision with stock
-       float currentStockRadius = 0;
-       
-       // CLIP PHYSICS TO VISUAL LENGTH
-       // If z is beyond the visual stock length, treat radius as 0 (air)
-       if (z < stockLenPx) {
-           currentStockRadius = stockProfile[z];
-       } else {
-           currentStockRadius = 0;
-       }
-       
-       float distFromSurface = toolRadiusAtZ - currentStockRadius;
-       
-       if (distFromSurface < 0) {
-          radialCollision = true;
-          float penPx = abs(distFromSurface);
+       // Check bounds (redundant if clamped but safe)
+       if (z >= 0 && z < stockProfileLen) {
+          // Distance from snapped tool center
+          float distFromTipX = abs((chuckX + z) - effectiveToolX);
           
-          if (penPx > maxRadialPenetrationPx) {
-             maxRadialPenetrationPx = penPx;
+          // Calculate hyperbolic tool radius at this distance
+          // Hyperbolic formula: y = sqrt((slope*x)^2 + R^2) - R
+          // Here, x is distFromTipX.
+          float physicsSlope = tipH / (tipW / 2.0); // Recalculate slope for clarity
+          float toolRadiusAtZ = 0;
+          if (distFromTipX < (tipW/2.0)) {
+             // Inside the rounded tip region
+             toolRadiusAtZ = toolTipDistFromCenter + (sqrt(pow(distFromTipX * physicsSlope, 2) + pow(toolTipRadiusPx, 2)) - toolTipRadiusPx);
+          } else {
+             // Outside tip, assume linear extension or just cap it
+             // For now, let's just continue the hyperbolic shape or linear
+             // Linear approximation from the edge of the tip:
+             float yAtEdge = sqrt(pow((tipW/2.0) * physicsSlope, 2) + pow(toolTipRadiusPx, 2)) - toolTipRadiusPx;
+             float slopeLinear = (tipH - yAtEdge) / (tipW/2.0); // Rough slope
+             toolRadiusAtZ = toolTipDistFromCenter + yAtEdge + (distFromTipX - tipW/2.0) * slopeLinear;
           }
           
-          // AXIAL FORCE CALCULATION (Area-Based)
-          // Sum the penetration depths to get the Area of overlap
-          // Left Flank (z < toolTipXpx): Pushes tool RIGHT (+)
-          // Right Flank (z > toolTipXpx): Pushes tool LEFT (-)
+          // Check collision with stock
+          // Collision if Stock Radius > Tool Radius
+          float distFromSurface = toolRadiusAtZ - stockProfile[z];
           
-          float axialComponent = 0;
-          if ((chuckX + z) < toolTipXpx) {
-             // Left side -> Push Right (+)
-             axialComponent = penPx; 
-          } else if ((chuckX + z) > toolTipXpx) {
-             // Right side -> Push Left (-)
-             axialComponent = -penPx;
-          }
-          netAxialAreaPx += axialComponent;
-          
-          // Material Removal with Yield Buffer
-          float yieldBufferPx = 1.0;
-          float newRadius = toolRadiusAtZ + yieldBufferPx;
-          
-          if (penPx > yieldBufferPx) {
-             // Cut material down (ONLY if new radius is smaller)
-             if (stockProfile[z] > newRadius) {
-                 stockProfile[z] = newRadius;
+          if (distFromSurface < 0) {
+             // COLLISION DETECTED
+             radialCollision = true;
+             
+             // Calculate penetration
+             float penPx = -distFromSurface;
+             
+             // Track maximum radial penetration for X-axis force
+             if (penPx > maxRadialPenetrationPx) {
+                 maxRadialPenetrationPx = penPx;
              }
              
-             // SYMMETRIC CUTTING ENFORCEMENT
-             // If we cut on one side, ensure the other side is also cut to preserve V-shape
-             // Calculate mirror Z index
-             float distFromTip = z - (toolTipXpx - chuckX);
-             int mirrorZ = int((toolTipXpx - chuckX) - distFromTip);
+             // Accumulate Net Axial Area
+             // If z < effectiveToolX (Left side), we add positive area?
+             // If z > effectiveToolX (Right side), we add negative area?
+             // Let's stick to the sign convention:
+             // Left Wall (z > toolX? No, z < toolX means we are on the left side of the tool)
+             // If we hit material on the LEFT of the tool, it pushes us RIGHT.
+             // If we hit material on the RIGHT of the tool, it pushes us LEFT.
              
-             if (mirrorZ >= 0 && mirrorZ < stockProfileLen && mirrorZ != z) {
-                 // Check if mirror point needs cutting
-                 // We must DECREASE radius to cut.
-                 if (stockProfile[mirrorZ] > newRadius) {
-                     stockProfile[mirrorZ] = newRadius;
-                 }
+             float zPos = chuckX + z;
+             float sideSign = (zPos < effectiveToolX) ? 1.0 : -1.0; 
+             
+             // Add to net area
+             netAxialAreaPx += penPx * sideSign;
+             
+             // Material Removal with Yield Buffer
+             float yieldBufferPx = 1.0;
+             float newRadius = toolRadiusAtZ + yieldBufferPx;
+             
+             if (penPx > yieldBufferPx) {
+                // Cut material down (ONLY if new radius is smaller)
+                if (stockProfile[z] > newRadius) {
+                    stockProfile[z] = newRadius;
+                }
              }
           }
        }
@@ -961,8 +950,8 @@ void drawMainView() {
     // 2. Scale to Effective Penetration
     // We want F = k * x_eff ~ Area.
     // Heuristic: 1mm^2 Area (1e-6 m^2) should feel like ~1mm Penetration (1e-3 m)
-    // Scaling Factor = 1000.0 -> REDUCED to 100.0 to fix instability
-    float effectivePenetrationM = abs(netAreaM2) * 100.0;
+    // Scaling Factor = 1000.0 -> REDUCED to 100.0 -> REDUCED by 70% to 30.0
+    float effectivePenetrationM = abs(netAreaM2) * 30.0;
     
     // If we have a net axial force, we should flag axial collision too?
     if (effectivePenetrationM > 0.00001) { // Threshold
@@ -984,22 +973,19 @@ void drawMainView() {
        xh = axialPenetration;
        
        // FORCE DIRECTION LOGIC FOR Z-AXIS
-       // PICO LOGIC:
-       // wall_dir = 1  -> Pushes NEGATIVE (Left)
-       // wall_dir = -1 -> Pushes POSITIVE (Right)
-       // Bridge maps Force > 0 to wall_dir = 1, Force < 0 to wall_dir = -1.
-       
-       // Left Wall (net > 0): Want Push RIGHT (Positive). Need wall_dir = -1. Need Force < 0.
-       // Right Wall (net < 0): Want Push LEFT (Negative). Need wall_dir = 1. Need Force > 0.
+       // Reverting to previous logic as inversion caused "no feedback".
+       // If netAxialAreaPx > 0, we assume we need to push RIGHT? (Or Suction was actually correct direction but unstable?)
+       // Let's go back to:
+       // NetArea > 0 -> forceSign = -1.0
+       // NetArea < 0 -> forceSign = 1.0
        
        if (netAxialAreaPx > 0) {
-          forceSign = -1.0; // Push Right (Positive via wall_dir=-1)
+          forceSign = -1.0; 
        } else if (netAxialAreaPx < 0) {
-          forceSign = 1.0;  // Push Left (Negative via wall_dir=1)
+          forceSign = 1.0;
        } else {
           forceSign = -1.0; // Default
        }
-       
        println("🔴 AXIAL COLLISION (Z) - NetArea: " + netAxialAreaPx + ", Sign: " + forceSign);
     } else if (activeAxis.equals("X") && radialCollision) {
        checkCollision = true;
@@ -1070,6 +1056,9 @@ void drawMainView() {
     // 1000 SFM -> 200 Hz
     float vibFreq = map(sfm, 10, 1000, 10, 200);
     vibFreq = constrain(vibFreq, 10, 200);
+    
+    // DISABLE VIBRATION FOR TESTING
+    vibFreq = 0.0;
 
     if (toolCollision) {
       if (!wasColliding || forceChanged) {

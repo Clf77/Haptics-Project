@@ -400,7 +400,7 @@ class MotorController:
         # Use a fixed stiffness similar to the template (200 N/m) 
         # or scale with the requested force if desired. 
         # The template uses k=200.0.
-        k = 4000.0 
+        k = 400.0 
         
         # Force is proportional to penetration
         force = k * x_penetration  # [N] Magnitude of restoring force
@@ -434,10 +434,11 @@ class MotorController:
         # Add sinusoidal vibration scaled by force to simulate cutting texture
         # Frequency: Variable based on surface speed (SFM)
         # Amplitude: 10% of current wall force (Reduced)
-        vib_amp_scale = 0.1
-        t_sec = time.ticks_ms() / 1000.0
-        vibration = force * vib_amp_scale * math.sin(2 * math.pi * self.vib_freq * t_sec)
-        force += vibration
+        # Amplitude: 10% of current wall force (Reduced)
+        # vib_amp_scale = 0.1
+        # t_sec = time.ticks_ms() / 1000.0
+        # vibration = force * vib_amp_scale * math.sin(2 * math.pi * self.vib_freq * t_sec)
+        # force += vibration
         force = max(0.0, force) # Clamp to ensure we don't pull into wall
         # ------------------------
         
