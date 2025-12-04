@@ -434,11 +434,11 @@ class MotorController:
         # Add sinusoidal vibration scaled by force to simulate cutting texture
         # Frequency: Variable based on surface speed (SFM)
         # Amplitude: 10% of current wall force (Reduced)
-        # Amplitude: 10% of current wall force (Reduced)
-        # vib_amp_scale = 0.1
-        # t_sec = time.ticks_ms() / 1000.0
-        # vibration = force * vib_amp_scale * math.sin(2 * math.pi * self.vib_freq * t_sec)
-        # force += vibration
+        # Amplitude: 5% of current wall force (Dynamic)
+        vib_amp_scale = 0.05
+        t_sec = time.ticks_ms() / 1000.0
+        vibration = force * vib_amp_scale * math.sin(2 * math.pi * self.vib_freq * t_sec)
+        force += vibration
         force = max(0.0, force) # Clamp to ensure we don't pull into wall
         # ------------------------
         

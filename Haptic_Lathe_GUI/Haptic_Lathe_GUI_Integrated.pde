@@ -12,6 +12,7 @@ int bridgePort = 5005;
 boolean bridgeConnected = false;
 int lastReconnectAttempt = 0;
 int reconnectInterval = 2000;
+int lastBridgeUpdate = 0; // Timestamp of last bridge update
 
 JSONObject lastStatus;
 float physicalHandlePosition = 0.0;  // degrees from motor encoder
@@ -111,6 +112,7 @@ boolean toolCollision = false;
 float collisionForce = 0.0;  // Force magnitude when collision detected
 float currentForce = 0.0;    // Current force being applied [N]
 float lastSentForce = 0.0;   // Track last sent force to avoid flooding
+float vibFreq = 0.0;         // Vibration frequency [Hz]
 
 // Relative Positioning State
 float currentToolX = 0;      // Current X position (pixels)
@@ -699,7 +701,27 @@ void drawMainView() {
   endShape();
 
   // Update tool position based on input mode and active axis
-  if (usePhysicalInput && bridgeConnected) {
+  if (usePhysicalInput) {    // Send to Python Bridge
+    if (bridgeConnected) {
+       // Limit update rate to avoid flooding
+       if (millis() - lastBridgeUpdate > 10) { // 100Hz updates
+           // Send forces
+           // We need to send Fx (Radial) and Fz (Axial)
+           // We use currentForce which is already signed based on forceSign
+           
+           float sendFx = 0;
+           float sendFz = 0;
+           
+           if (activeAxis.equals("X")) {
+               sendFx = currentForce; 
+           } else {
+               sendFz = currentForce; 
+           }
+           
+           // Send
+           bridgeClient.write("FORCE:" + nf(sendFx, 0, 2) + "," + nf(sendFz, 0, 2) + "," + nf(vibFreq, 0, 1) + "\n");
+           lastBridgeUpdate = millis();
+       }
     // Relative positioning logic
     if (firstBridgeUpdate) {
       // First update - just sync the handle position
@@ -885,13 +907,12 @@ void drawMainView() {
              float yAtEdge = sqrt(pow((tipW/2.0) * physicsSlope, 2) + pow(toolTipRadiusPx, 2)) - toolTipRadiusPx;
              float slopeLinear = (tipH - yAtEdge) / (tipW/2.0); // Rough slope
              toolRadiusAtZ = toolTipDistFromCenter + yAtEdge + (distFromTipX - tipW/2.0) * slopeLinear;
-          }
+           }
           
           // Check collision with stock
           // Collision if Stock Radius > Tool Radius
           float distFromSurface = toolRadiusAtZ - stockProfile[z];
-          
-          if (distFromSurface < 0) {
+                    if (distFromSurface < 0) {
              // COLLISION DETECTED
              radialCollision = true;
              
@@ -916,7 +937,27 @@ void drawMainView() {
              
              // Add to net area
              netAxialAreaPx += penPx * sideSign;
-             
+
+             // VIBRATION FREQUENCY CALCULATION (Dynamic)
+    // Calculate Surface Speed (SFM)
+    // SFM = (RPM * Diameter_Inches * PI) / 12.0
+    // Diameter is 2 * radius (distance from center)
+    // We use the tool's current radial position as the cutting diameter
+    float cuttingDiameterIn = (toolTipDistFromCenter / pxPerIn) * 2.0;
+    float sfm = (spindleRPM * cuttingDiameterIn * PI) / 12.0;
+    
+    // Map SFM to Frequency
+    // User Request: 10 SFM = 10 Hz. So 1:1 mapping.
+    // Only vibrate if we are in collision (cutting)
+    if (axialCollision || radialCollision) {
+        vibFreq = sfm;
+        // Clamp minimum frequency to avoid weird low-freq effects? 
+        // User said "Lowest SFM (10 sfm) corresponds to 10hz and scale up from there".
+        // Let's just use raw SFM for now.
+    } else {
+        vibFreq = 0.0;
+    }
+    
              // Material Removal with Yield Buffer
              float yieldBufferPx = 1.0;
              float newRadius = toolRadiusAtZ + yieldBufferPx;
@@ -1042,40 +1083,7 @@ void drawMainView() {
     toolCollision = false;
   }
 
-  // Send haptic feedback to motor
-  if (bridgeConnected) {
-    boolean forceChanged = abs(collisionForce - lastSentForce) > 1.0; // Update if force changes by > 1%
-    
-    // Calculate SFM (Surface Feet per Minute)
-    // Diameter = 2 * Radius (rawXIn is radius in inches)
-    float currentDiameterIn = 2.0 * rawXIn;
-    float sfm = (spindleRPM * currentDiameterIn * PI) / 12.0;
-    
-    // Map SFM to Vibration Frequency
-    // 10 SFM -> 10 Hz
-    // 1000 SFM -> 200 Hz
-    float vibFreq = map(sfm, 10, 1000, 10, 200);
-    vibFreq = constrain(vibFreq, 10, 200);
-    
-    // DISABLE VIBRATION FOR TESTING
-    vibFreq = 0.0;
 
-    if (toolCollision) {
-      if (!wasColliding || forceChanged) {
-        // Entered wall OR force changed significantly while in wall
-        // Yield force: 15N for cutting (allows wall to move if pushed harder)
-        float yieldForce = 15.0; 
-        sendToBridge("{\"type\":\"haptic_feedback\",\"force\":" + collisionForce + ",\"active\":true,\"freq\":" + vibFreq + ",\"yield\":" + yieldForce + "}");
-        lastSentForce = collisionForce;
-        if (!wasColliding) println("🧱 VIRTUAL WALL ENTERED (SFM=" + nf(sfm,0,1) + ", Freq=" + nf(vibFreq,0,1) + "Hz)");
-      }
-    } else if (wasColliding) {
-      // Just exited virtual wall - release
-      sendToBridge("{\"type\":\"haptic_feedback\",\"force\":0,\"active\":false,\"freq\":10}");
-      lastSentForce = 0.0;
-      println("✅ Virtual wall exited - no resistance");
-    }
-  }
   
   // Visual feedback for collision
   if (toolCollision) {
@@ -1085,6 +1093,30 @@ void drawMainView() {
     // noStroke();
     // ellipse(toolTipXpx, toolTipYpx, 20, 20);
   }
+  }
+  
+  // Send to Python Bridge
+    if (bridgeConnected) {
+       // Limit update rate to avoid flooding
+       if (millis() - lastBridgeUpdate > 10) { // 100Hz updates
+           // Send forces
+           // We need to send Fx (Radial) and Fz (Axial)
+           // We use currentForce which is already signed based on forceSign
+           
+           float sendFx = 0;
+           float sendFz = 0;
+           
+           if (activeAxis.equals("X")) {
+               sendFx = currentForce; 
+           } else {
+               sendFz = currentForce; 
+           }
+           
+           // Send
+           bridgeClient.write("FORCE:" + nf(sendFx, 0, 2) + "," + nf(sendFz, 0, 2) + "," + nf(vibFreq, 0, 1) + "\n");
+           lastBridgeUpdate = millis();
+       }
+    }
 }
 
 // ----------------------------------------------------
