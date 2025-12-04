@@ -113,6 +113,7 @@ float collisionForce = 0.0;  // Force magnitude when collision detected
 float currentForce = 0.0;    // Current force being applied [N]
 float lastSentForce = 0.0;   // Track last sent force to avoid flooding
 float vibFreq = 0.0;         // Vibration frequency [Hz]
+boolean hasCrashed = false;  // True if tool hit stock at 0 RPM
 
 // Relative Positioning State
 float currentToolX = 0;      // Current X position (pixels)
@@ -512,9 +513,15 @@ void drawMainView() {
   stroke(0);
   noFill();
   beginShape();
+  // Wave phase based on time and spindle speed
+  float wavePhase = millis() / 1000.0 * spindleRPM / 60.0 * TWO_PI;  // Rotate with spindle
+  float waveAmplitude = (spindleRPM > 0) ? 3.0 : 0.0;  // Wave only when spinning
+  float waveFrequency = 0.05;  // Waves per pixel
+  
   for (float px = 0; px < stockLenPx; px += 5) {
-    // STRAIGHT CENTERLINE - No wobble
-    vertex(chuckX + px, centerY);
+    // WAVY CENTERLINE - Simulates rotating stock
+    float waveY = sin(px * waveFrequency + wavePhase) * waveAmplitude;
+    vertex(chuckX + px, centerY + waveY);
   }
   endShape();
 
@@ -656,25 +663,37 @@ void drawMainView() {
       }
       
       if (distFromFacePx < 0) {
-        // FIX: Only trigger Face Check haptics if we are CLOSE to the face (e.g. within tool width).
-        // If we are deep inside (distFromFacePx is large negative), we are likely in a groove/turning area.
-        // Let the V-Tool logic handle collisions there.
-        // Use tipW (approx 12px) as the threshold.
-        // DISABLE FACE CHECK HAPTICS - Unify under V-Tool Logic
-        // if (distFromFacePx > -tipW * 2.0) { 
-        //    axialCollision = true;
-        //    axialPenetration = abs(distFromFacePx) / pxPerIn * 0.0254;
-        // }
-        
-        // Material Removal with Yield Buffer
-        float yieldBufferPx = 1.0;
-        float penPx = abs(distFromFacePx);
-        if (penPx > yieldBufferPx) {
-           // Cut material down, leaving yieldBufferPx
-           stockLengthIn -= (penPx - yieldBufferPx) / pxPerIn; 
-           stockLenPx = stockLengthIn * pxPerIn;
-           stockRightX = chuckX + stockLenPx;
+        // Tool is INSIDE the stock (left of face)
+        // Material Removal with Yield Buffer (only when spindle is ON)
+        if (spindleRPM > 0) {
+          float yieldBufferPx = 1.0;
+          float penPx = abs(distFromFacePx);
+          if (penPx > yieldBufferPx) {
+             // Cut material down, leaving yieldBufferPx
+             stockLengthIn -= (penPx - yieldBufferPx) / pxPerIn; 
+             stockLenPx = stockLengthIn * pxPerIn;
+             stockRightX = chuckX + stockLenPx;
+          }
         }
+      }
+    }
+    
+    // SEPARATE CHECK: Face wall when approaching from RIGHT (outside, in empty air)
+    // This is outside the radial bounds check so it works when tool is outside stock
+    // distFromFacePx = toolTipXpx - stockRightX; (positive = in empty air to right)
+    float distFromFaceForWall = toolTipXpx - stockRightX;
+    
+    // DEBUG: Print face-from-right check every 60 frames
+    if (frameCount % 60 == 0) {
+      println("Face-from-right: distFromFace=" + distFromFaceForWall + ", toolTipDist=" + toolTipDistFromCenter + ", stockRadius=" + stockRadiusPx);
+    }
+    
+    // CRASH DETECTION: Tool hits face from right at 0 RPM
+    if (spindleRPM == 0 && distFromFaceForWall >= 0 && distFromFaceForWall <= 5.0) {
+      // Tool is in empty air, very close to face (within 5 pixels = contact)
+      // AND tool is within the radial bounds of the stock (would hit face)
+      if (toolTipDistFromCenter <= stockRadiusPx + collisionMargin) {
+        hasCrashed = true;  // CRASH!
       }
     }
     
@@ -694,12 +713,13 @@ void drawMainView() {
     int startZ = 0;
     int endZ = 0;
     
-    // FIX: If tool is completely past the stock, no collision possible!
+    // FIX: If tool is completely past the stock, no RADIAL collision possible!
+    // But AXIAL (face) collision can still happen if approaching from right
     // Check if left edge of tool is past right edge of stock
     if (effectiveToolX - toolHalfWidth > stockRightX) {
-        // Tool is in empty space - no haptic feedback
+        // Tool is in empty space - no RADIAL feedback (but axialCollision may still be set from face)
         radialCollision = false;
-        axialCollision = false;
+        // Note: axialCollision is NOT reset here - it was set above if approaching face from right
     } else {
     
     // Determine loop range based on snapped position
@@ -745,6 +765,11 @@ void drawMainView() {
              // COLLISION DETECTED
              radialCollision = true;
              
+             // CRASH: If spindle is 0 and we hit stock, it's a crash
+             if (spindleRPM == 0) {
+               hasCrashed = true;
+             }
+             
              // Calculate penetration
              float penPx = -distFromSurface;
              
@@ -787,18 +812,49 @@ void drawMainView() {
         vibFreq = 0.0;
     }
     
-             // Material Removal with Yield Buffer
-             float yieldBufferPx = 1.0;
-             float newRadius = toolRadiusAtZ + yieldBufferPx;
-             
-             if (penPx > yieldBufferPx) {
-                // Cut material down (ONLY if new radius is smaller)
-                if (stockProfile[z] > newRadius) {
-                    stockProfile[z] = newRadius;
+              // Material Removal with Yield Buffer
+              // ONLY remove material if spindle is running (RPM > 0)
+              if (spindleRPM > 0) {
+                float yieldBufferPx = 1.0;
+                float newRadius = toolRadiusAtZ + yieldBufferPx;
+                
+                if (penPx > yieldBufferPx) {
+                   // Cut material down (ONLY if new radius is smaller)
+                   if (stockProfile[z] > newRadius) {
+                       stockProfile[z] = newRadius;
+                   }
                 }
-             }
+              }
+              // When spindle is off, collision is detected but no material removed
+              // (virtual wall behavior - 100x damping already applied by Pico)
           }
        }
+    }
+    
+    // PARTING-OFF: When tool TIP passes through center of stock
+    // Use toolTipDistFromCenter directly (tool tip Y distance from centerline)
+    // effectiveToolX is the tool tip X position, convert to Z index
+    if (spindleRPM > 0 && toolTipDistFromCenter <= 10.0) {
+      // Tool tip has reached/passed the centerline
+      int tipZIndex = int(effectiveToolX - chuckX);
+      
+      // Remove all material from tool tip position to the end (parting off)
+      if (tipZIndex >= 0 && tipZIndex < stockProfileLen) {
+        for (int partZ = tipZIndex; partZ < stockProfileLen; partZ++) {
+          stockProfile[partZ] = 0;
+        }
+        // Update stock length
+        stockLengthIn = float(tipZIndex) / pxPerIn;
+        stockLenPx = stockLengthIn * pxPerIn;
+        stockRightX = chuckX + stockLenPx;
+      }
+      
+      // ALSO: Zero out the V-tool groove to the LEFT of the tip (the nub)
+      // This removes material the tool shoulders are cutting through
+      int leftEdge = max(0, int(effectiveToolX - toolHalfWidth - chuckX));
+      for (int grooveZ = leftEdge; grooveZ < tipZIndex && grooveZ < stockProfileLen; grooveZ++) {
+        stockProfile[grooveZ] = 0;  // Tool has passed through here - no material left
+      }
     }
     
     // DEBUG: Print loop range and netArea
@@ -1147,6 +1203,26 @@ void draw() {
   drawLeftPanel();
   drawMainView();   // compute tool tip + X/Z first
   drawRightPanel(); // then use them in live readouts
+
+  // CRASH OVERLAY: Show if tool hit stock at 0 RPM
+  if (hasCrashed) {
+    // Dark red overlay
+    fill(150, 0, 0, 200);
+    noStroke();
+    rect(0, 0, width, height);
+    
+    // Crash message
+    fill(255);
+    textAlign(CENTER, CENTER);
+    textSize(72);
+    text("YOU CRASHED!", width/2, height/2 - 40);
+    textSize(24);
+    text("Tool hit stock with spindle off", width/2, height/2 + 30);
+    text("Restart the program to continue", width/2, height/2 + 70);
+    
+    // Stop sending any forces - don't process further
+    return;
+  }
 
   // Request status updates periodically
   if (bridgeConnected && frameCount % 30 == 0) {  // Every 0.5 seconds at 60fps
