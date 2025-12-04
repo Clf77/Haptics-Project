@@ -562,13 +562,13 @@ void drawMainView() {
       
       if (activeAxis.equals("Z")) {
         // Z-axis (axial): Move tool along Z
-        // Positive delta = Move Right (Positive Z)
-        currentToolZ += delta * movementScale;
+        // REVERSED: Negative delta = Move Right (Positive Z)
+        currentToolZ -= delta * movementScale;
       } else {
         // X-axis (radial): Move tool in/out
-        // Positive delta (CW) = Move IN (Negative X / smaller diameter)
-        // Negative delta (CCW) = Move OUT (Positive X / larger diameter)
-        currentToolX -= delta * movementScale;
+        // REVERSED: Negative delta (CCW) = Move IN (smaller diameter)
+        // Positive delta (CW) = Move OUT (larger diameter)
+        currentToolX += delta * movementScale;
       }
     }
     
@@ -900,19 +900,17 @@ void drawMainView() {
        checkCollision = true;
        xh = axialPenetration;
        
-       // FORCE DIRECTION LOGIC FOR Z-AXIS
-       // Reverting to previous logic as inversion caused "no feedback".
-       // If netAxialAreaPx > 0, we assume we need to push RIGHT? (Or Suction was actually correct direction but unstable?)
-       // Let's go back to:
-       // NetArea > 0 -> forceSign = -1.0
-       // NetArea < 0 -> forceSign = 1.0
+       // FORCE DIRECTION LOGIC FOR Z-AXIS (REVERSED for new movement direction)
+       // Movement was reversed, so force direction needs to reverse too
+       // NetArea > 0 -> forceSign = 1.0 (was -1.0)
+       // NetArea < 0 -> forceSign = -1.0 (was 1.0)
        
        if (netAxialAreaPx > 0) {
-          forceSign = -1.0; 
+          forceSign = 1.0;  // REVERSED
        } else if (netAxialAreaPx < 0) {
-          forceSign = 1.0;
+          forceSign = -1.0;  // REVERSED
        } else {
-          forceSign = -1.0; // Default
+          forceSign = 1.0; // Default (REVERSED)
        }
        println("🔴 AXIAL COLLISION (Z) - NetArea: " + netAxialAreaPx + ", Sign: " + forceSign);
     } else if (activeAxis.equals("X") && radialCollision) {
@@ -922,14 +920,9 @@ void drawMainView() {
        // Let's try 500.0 as a middle ground
        xh = radialPenetration * 5.0; // Boost radial penetration signal
        
-       // Radial: Want Push OUT (Positive X).
-       // Handle Logic: Positive Delta (CW) = Move IN. Negative Delta (CCW) = Move OUT.
-       // We want to push OUT -> Push Negative (CCW).
-       // Pico Logic: wall_dir = 1 -> Push Negative (Left/CCW).
-       // So we need wall_dir = 1.
-       // Bridge Logic: Force > 0 -> wall_dir = 1.
-       // So we need Force > 0.
-       forceSign = 1.0; 
+       // Radial: REVERSED - now push IN (Negative direction)
+       // Movement was reversed, so force direction needs to reverse too
+       forceSign = -1.0;  // REVERSED (was 1.0)
        println("🔴 RADIAL COLLISION (X) - Pen: " + radialPenetration + ", ForceSign: " + forceSign);
     } else {
        checkCollision = false;
