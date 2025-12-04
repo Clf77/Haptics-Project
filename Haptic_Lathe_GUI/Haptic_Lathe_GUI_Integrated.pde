@@ -113,6 +113,7 @@ float collisionForce = 0.0;  // Force magnitude when collision detected
 float currentForce = 0.0;    // Current force being applied [N]
 float lastSentForce = 0.0;   // Track last sent force to avoid flooding
 float vibFreq = 0.0;         // Vibration frequency [Hz]
+boolean hasCrashed = false;  // True if tool hit stock at 0 RPM
 
 // Relative Positioning State
 float currentToolX = 0;      // Current X position (pixels)
@@ -267,98 +268,20 @@ void drawLeftPanel() {
   float innerX = x + padding;
   float innerY = y + padding;
 
-  // ----- Training Scenario (REMOVED) -----
-  // Replaced by intelligent cutting logic
-  innerY += 25;
-  // drawPillButton(innerX, innerY, "Facing", facingSelected);
-  // innerY += 30;
-  // drawPillButton(innerX, innerY, "Turn to Diameter", turnDiaSelected);
-  // innerY += 30;
-  // drawPillButton(innerX, innerY, "Boring", boringSelected);
-  // innerY += 30;
+  // ----- Controls Section -----
+  drawSubPanelTitle(innerX, innerY + 10, "Controls");
+  innerY += 35;
 
-  // ----- Skill Level -----
-  innerY += 45;
-  drawSubPanelTitle(innerX, innerY, "Skill Level");
-  innerY += 25;
+  // Reset Workpiece (momentary) - just draw, action in mousePressed
+  drawOutlinedButton(innerX, innerY, "Reset Workpiece", false);
+  innerY += 30;
 
-  // Beginner
-  innerY += 25;
-  if (overRect(innerX, innerY - 11, 180, 22)) {
-    beginnerSelected     = true;
-    intermediateSelected = false;
-    advancedSelected     = false;
-  }
+  // Zero X (momentary) - just draw, action in mousePressed
+  drawOutlinedButton(innerX, innerY, "Zero X", false);
+  innerY += 30;
 
-  // Intermediate
-  innerY += 25;
-  if (overRect(innerX, innerY - 11, 180, 22)) {
-    beginnerSelected     = false;
-    intermediateSelected = true;
-    advancedSelected     = false;
-  }
-
-  // Advanced
-  innerY += 25;
-  if (overRect(innerX, innerY - 11, 180, 22)) {
-    beginnerSelected     = false;
-    intermediateSelected = false;
-    advancedSelected     = true;
-  }
-
-  // Controls
-  innerY += 45;
-
-  // Reset Workpiece (momentary)
-  innerY += 25;
-  if (overRect(innerX, innerY - 11, 180, 22)) {
-    resetFlashStart = millis();
-  }
-
-  // Zero X (momentary, zero readout only)
-  innerY += 25;
-  if (overRect(innerX, innerY - 11, 180, 22)) {
-    zeroXFlashStart = millis();
-    xZeroOffsetIn = rawXIn;
-  }
-
-  // Zero Z (momentary, zero readout only)
-  innerY += 25;
-  if (overRect(innerX, innerY - 11, 180, 22)) {
-    zeroZFlashStart = millis();
-    zZeroOffsetIn = rawZIn;
-  }
-
-  // Show Toolpath (true toggle)
-  innerY += 25;
-  if (overRect(innerX, innerY - 11, 180, 22)) {
-    pathSelected = !pathSelected;
-  }
-
-  // Now draw the buttons (after hit testing)
-  innerY = y + padding + 50;  // reset position for drawing
-
-  // drawPillButton(innerX, innerY, "Facing", facingSelected);
-  // innerY += 30;
-  // drawPillButton(innerX, innerY, "Turn to Diameter", turnDiaSelected);
-  // innerY += 30;
-  // drawPillButton(innerX, innerY, "Boring", boringSelected);
-
-  innerY += 75;  // Skip to skill level buttons
-  drawOutlinedButton(innerX, innerY, "Beginner", beginnerSelected);
-  innerY += 25;
-  drawOutlinedButton(innerX, innerY, "Intermediate", intermediateSelected);
-  innerY += 25;
-  drawOutlinedButton(innerX, innerY, "Advanced", advancedSelected);
-
-  innerY += 70;  // Skip to control buttons
-  drawOutlinedButton(innerX, innerY, "Reset Workpiece", false);  // momentary
-  innerY += 25;
-  drawOutlinedButton(innerX, innerY, "Zero X", false);  // momentary
-  innerY += 25;
-  drawOutlinedButton(innerX, innerY, "Zero Z", false);  // momentary
-  innerY += 25;
-  drawOutlinedButton(innerX, innerY, "Show Toolpath", pathSelected);  // toggle
+  // Zero Z (momentary) - just draw, action in mousePressed
+  drawOutlinedButton(innerX, innerY, "Zero Z", false);
 }
 
 // Modify mousePressed() to send commands to bridge
@@ -380,106 +303,71 @@ void mousePressed() {
   // Click elsewhere = deactivate field
   activeField = 0;
 
-  // Send mode changes to bridge (REMOVED SCENARIOS)
-  // Now we just rely on activeAxis for haptic feedback direction
-  // if (facingSelected) { ... }
-
-  // Handle control buttons
-  if (resetSelected) {
-    sendToBridge("{\"type\":\"reset\"}");
-    initStockProfile(); // Reset the visual stock
-  }
-
-  // Zero buttons now send to physical controller
-  if (zeroXSelected) {
-    sendToBridge("{\"type\":\"zero_position\",\"axis\":\"x\"}");
-  }
-  if (zeroZSelected) {
-    sendToBridge("{\"type\":\"zero_position\",\"axis\":\"z\"}");
-  }
-
-  // Handle motor control buttons
-  handleMotorControlClicks();
-}
-
-void handleMotorControlClicks() {
-  // Calculate motor control panel position (same as in drawRightPanel)
-  float x = W - rightPanelW;
-  float y = headerH;
-  float panelH = H - headerH - footerH;
-  float innerX = x + padding;
-  float innerY = y + padding;
-
-  // Skip existing sections to find motor control section
-  // Live readouts: 140px
-  innerY += 150;
-  // Cutting parameters: 170px
-  innerY += 190;
-  // Tolerance summary: 120px
-  innerY += 130;  // Extra space for motor control section
-
-  float btnW = (rightPanelW - 2 * padding - 30) / 3;
-  float btnH = 25;
-  float spacing = 8;
-  float motorX = innerX + 10;
-  float motorY = innerY + 35;
-
-  // Check motor direction buttons (Row 1)
-  if (overRect(motorX, motorY, btnW, btnH)) {
-    sendToBridge("{\"type\":\"motor_control\",\"action\":\"forward\"}");
-    println("Motor Forward");
-  } else if (overRect(motorX + btnW + spacing, motorY, btnW, btnH)) {
-    sendToBridge("{\"type\":\"motor_control\",\"action\":\"stop\"}");
-    println("Motor Stop");
-  } else if (overRect(motorX + 2*(btnW + spacing), motorY, btnW, btnH)) {
-    sendToBridge("{\"type\":\"motor_control\",\"action\":\"reverse\"}");
-    println("Motor Reverse");
-  }
-
-  // Check speed buttons (Row 2)
-  motorY += btnH + spacing;
-  if (overRect(motorX, motorY, btnW, btnH)) {
-    sendToBridge("{\"type\":\"motor_control\",\"action\":\"speed\",\"value\":30}");
-    println("Motor Speed: Slow");
-  } else if (overRect(motorX + btnW + spacing, motorY, btnW, btnH)) {
-    sendToBridge("{\"type\":\"motor_control\",\"action\":\"speed\",\"value\":100}");
-    println("Motor Speed: Medium");
-  } else if (overRect(motorX + 2*(btnW + spacing), motorY, btnW, btnH)) {
-    sendToBridge("{\"type\":\"motor_control\",\"action\":\"speed\",\"value\":200}");
-    println("Motor Speed: Fast");
-  }
+  // Handle LEFT PANEL control buttons
+  float leftInnerX = padding;
+  float leftInnerY = headerH + padding + 35;  // Skip header + title
   
-  // Check axis selector buttons
-  motorY += btnH + spacing + 10 + 16;  // Skip to axis selector
-  float axisBtnW = (rightPanelW - 2 * padding - 30) / 2;
-  float axisBtnH = 22;
-  if (overRect(motorX, motorY, axisBtnW, axisBtnH)) {
+  // Reset Workpiece button
+  if (overRect(leftInnerX, leftInnerY - 11, 180, 22)) {
+    resetFlashStart = millis();
+    sendToBridge("{\"type\":\"reset\"}");
+    initStockProfile();  // Rebuild the stock
+    
+    // Calculate initial tool position (same formula as setup)
+    float centerY = (headerH + padding + padding) + (H - headerH - footerH - 2*padding) * 0.40;
+    float chuckX  = leftPanelW + padding + 100;
+    float stockLenPx = stockLengthIn * pxPerIn;
+    float stockHPx   = stockDiameterIn * pxPerIn;
+    float stockRadiusPx = stockHPx / 2.0;
+    
+    // Start Z past the right edge of the stock (in empty air)
+    currentToolZ = chuckX + stockLenPx + 50;  // 50px past stock end
+    
+    // Start X well outside the stock (below it)
+    currentToolX = centerY + stockRadiusPx + 40; // 40px clearance below
+    
+    lastHandlePosition = physicalHandlePosition; // Sync encoder
+    firstBridgeUpdate = true; // Reset the first update flag
+    println("Reset Workpiece: Stock rebuilt, tool @ Z=" + currentToolZ + ", X=" + currentToolX);
+  }
+  leftInnerY += 30;
+  
+  // Zero X button
+  if (overRect(leftInnerX, leftInnerY - 11, 180, 22)) {
+    zeroXFlashStart = millis();
+    xZeroOffsetIn = rawXIn;
+    sendToBridge("{\"type\":\"zero_position\",\"axis\":\"x\"}");
+    println("Zero X clicked");
+  }
+  leftInnerY += 30;
+  
+  // Zero Z button
+  if (overRect(leftInnerX, leftInnerY - 11, 180, 22)) {
+    zeroZFlashStart = millis();
+    zZeroOffsetIn = rawZIn;
+    sendToBridge("{\"type\":\"zero_position\",\"axis\":\"z\"}");
+    println("Zero Z clicked");
+  }
+
+  // Handle axis selection buttons (in right panel after Cutting Parameters)
+  float x = W - rightPanelW;
+  float innerX = x + padding;
+  float innerY = headerH + padding;
+  innerY += 150;  // Skip Live Readouts
+  innerY += 190;  // Skip Cutting Parameters
+  innerY += 35;   // Title offset for Axis Selection
+  
+  float axisBtnW = (rightPanelW - 2 * padding - 15) / 2;
+  float axisBtnH = 28;
+  
+  if (overRect(innerX, innerY, axisBtnW, axisBtnH)) {
     activeAxis = "X";
     sendToBridge("{\"type\":\"axis_select\",\"axis\":\"X\"}");
     println("Axis: X (Radial)");
-  } else if (overRect(motorX + axisBtnW + 5, motorY, axisBtnW, axisBtnH)) {
+  } else if (overRect(innerX + axisBtnW + 5, innerY, axisBtnW, axisBtnH)) {
     activeAxis = "Z";
     sendToBridge("{\"type\":\"axis_select\",\"axis\":\"Z\"}");
     println("Axis: Z (Axial)");
-  }
-
-  // Check position control buttons
-  motorY += btnH + spacing + 10 + 18;  // Skip position readout
-  float posBtnW = (rightPanelW - 2 * padding - 40) / 4;
-  float posBtnH = 20;
-
-  if (overRect(motorX, motorY, posBtnW, posBtnH)) {
-    sendToBridge("{\"type\":\"motor_control\",\"action\":\"position\",\"delta\":-10}");
-    println("Position: -10°");
-  } else if (overRect(motorX + posBtnW + 5, motorY, posBtnW, posBtnH)) {
-    sendToBridge("{\"type\":\"motor_control\",\"action\":\"position\",\"delta\":-1}");
-    println("Position: -1°");
-  } else if (overRect(motorX + 2*(posBtnW + 5), motorY, posBtnW, posBtnH)) {
-    sendToBridge("{\"type\":\"motor_control\",\"action\":\"position\",\"delta\":1}");
-    println("Position: +1°");
-  } else if (overRect(motorX + 3*(posBtnW + 5), motorY, posBtnW, posBtnH)) {
-    sendToBridge("{\"type\":\"motor_control\",\"action\":\"position\",\"delta\":10}");
-    println("Position: +10°");
   }
 }
 
@@ -545,82 +433,13 @@ void drawMainView() {
   float innerW = w - 2 * padding;
   float innerH = h - 2 * padding;
 
-  // ---------- Decide what to show in Drawing / Tolerances View ----------
-  String stockLine;
-  String opLine;
-  String datumLine;
+  // Fixed stock dimensions
+  stockDiameterIn = 1.25;
+  stockLengthIn   = 4.50;
 
-  boolean anyScenario = facingSelected || turnDiaSelected || boringSelected || customSelected;
-
-  // ----- Skill-based tolerance string -----
-  boolean anySkill = beginnerSelected || intermediateSelected || advancedSelected;
-  String tolStr;
-
-  if (!anySkill || beginnerSelected) {
-    tolStr = "± 0.010 in";
-  } else if (intermediateSelected) {
-    tolStr = "± 0.005 in";
-  } else {
-    tolStr = "± 0.002 in";
-  }
-
-  // ----- Operation-dependent text, using tolStr -----
-  if (facingSelected || !anyScenario) {
-    stockDiameterIn = 1.25;
-    stockLengthIn   = 4.50;
-    stockLine = "• Stock: Ø " + nf(stockDiameterIn, 1, 2) + " in x " +
-                nf(stockLengthIn, 1, 2) + " in";
-    opLine    = "• Operation: Facing to overall length 4.000 " + tolStr;
-    datumLine = "• Datum: Chuck face (Z = 0.000 in)";
-  } else if (turnDiaSelected) {
-    stockDiameterIn = 1.25;
-    stockLengthIn   = 4.00;
-    stockLine = "• Stock: Ø " + nf(stockDiameterIn, 1, 2) + " in x " +
-                nf(stockLengthIn, 1, 2) + " in";
-    opLine    = "• Operation: Turn shoulder to Ø 1.000 " + tolStr;
-    datumLine = "• Datum: Shoulder location from Z = 0.000 in";
-  } else if (boringSelected) {
-    stockDiameterIn = 2.00;
-    stockLengthIn   = 3.00;
-    stockLine = "• Stock: Ø " + nf(stockDiameterIn, 1, 2) + " in x " +
-                nf(stockLengthIn, 1, 2) + " in (pre-drilled)";
-    opLine    = "• Operation: Bore ID to Ø 1.000 " + tolStr;
-    datumLine = "• Datum: Bore start at Z = 0.000 in";
-  } else {
-    stockDiameterIn = 1.50;
-    stockLengthIn   = 4.00;
-    stockLine = "• Stock: Ø " + nf(stockDiameterIn, 1, 2) + " in x " +
-                nf(stockLengthIn, 1, 2) + " in";
-    opLine    = "• Operation: User-defined (custom)";
-    datumLine = "• Datum: Defined per setup";
-  }
-
-  // --- Drawing section (top) ---
-  float drawingH = 160;
-  fill(accentFill);
-  rect(innerX, innerY, innerW, drawingH);
-  fill(0);
-  textSize(16);
-  text("Drawing / Tolerances View", innerX + 10, innerY + 20);
-  textSize(12);
-  text(stockLine + "\n" + opLine + "\n" + datumLine,
-       innerX + 10, innerY + 55);
-
-  // Drawing thumbnail
-  float printX = innerX + innerW - 260;
-  float printY = innerY + 20;
-  float printW = 240;
-  float printH = drawingH - 40;
-  noFill();
-  stroke(0);
-  rect(printX, printY, printW, printH);
-  line(printX + 40, printY + 20, printX + printW - 20, printY + 20);
-  textSize(10);
-  text("Lathe Part Drawing (wireframe)", printX + 10, printY + 12);
-
-  // --- Workspace (bottom) ---
-  float workspaceY = innerY + drawingH + padding;
-  float workspaceH = innerH - drawingH - padding;
+  // --- Workspace (full height now - drawing section removed) ---
+  float workspaceY = innerY;
+  float workspaceH = innerH;
   fill(255);
   rect(innerX, workspaceY, innerW, workspaceH);
 
@@ -694,9 +513,15 @@ void drawMainView() {
   stroke(0);
   noFill();
   beginShape();
+  // Wave phase based on time and spindle speed
+  float wavePhase = millis() / 1000.0 * spindleRPM / 60.0 * TWO_PI;  // Rotate with spindle
+  float waveAmplitude = (spindleRPM > 0) ? 3.0 : 0.0;  // Wave only when spinning
+  float waveFrequency = 0.05;  // Waves per pixel
+  
   for (float px = 0; px < stockLenPx; px += 5) {
-    // STRAIGHT CENTERLINE - No wobble
-    vertex(chuckX + px, centerY);
+    // WAVY CENTERLINE - Simulates rotating stock
+    float waveY = sin(px * waveFrequency + wavePhase) * waveAmplitude;
+    vertex(chuckX + px, centerY + waveY);
   }
   endShape();
 
@@ -737,13 +562,13 @@ void drawMainView() {
       
       if (activeAxis.equals("Z")) {
         // Z-axis (axial): Move tool along Z
-        // Positive delta = Move Right (Positive Z)
-        currentToolZ += delta * movementScale;
+        // REVERSED: Negative delta = Move Right (Positive Z)
+        currentToolZ -= delta * movementScale;
       } else {
         // X-axis (radial): Move tool in/out
-        // Positive delta (CW) = Move IN (Negative X / smaller diameter)
-        // Negative delta (CCW) = Move OUT (Positive X / larger diameter)
-        currentToolX -= delta * movementScale;
+        // REVERSED: Negative delta (CCW) = Move IN (smaller diameter)
+        // Positive delta (CW) = Move OUT (larger diameter)
+        currentToolX += delta * movementScale;
       }
     }
     
@@ -838,25 +663,37 @@ void drawMainView() {
       }
       
       if (distFromFacePx < 0) {
-        // FIX: Only trigger Face Check haptics if we are CLOSE to the face (e.g. within tool width).
-        // If we are deep inside (distFromFacePx is large negative), we are likely in a groove/turning area.
-        // Let the V-Tool logic handle collisions there.
-        // Use tipW (approx 12px) as the threshold.
-        // DISABLE FACE CHECK HAPTICS - Unify under V-Tool Logic
-        // if (distFromFacePx > -tipW * 2.0) { 
-        //    axialCollision = true;
-        //    axialPenetration = abs(distFromFacePx) / pxPerIn * 0.0254;
-        // }
-        
-        // Material Removal with Yield Buffer
-        float yieldBufferPx = 1.0;
-        float penPx = abs(distFromFacePx);
-        if (penPx > yieldBufferPx) {
-           // Cut material down, leaving yieldBufferPx
-           stockLengthIn -= (penPx - yieldBufferPx) / pxPerIn; 
-           stockLenPx = stockLengthIn * pxPerIn;
-           stockRightX = chuckX + stockLenPx;
+        // Tool is INSIDE the stock (left of face)
+        // Material Removal with Yield Buffer (only when spindle is ON)
+        if (spindleRPM > 0) {
+          float yieldBufferPx = 1.0;
+          float penPx = abs(distFromFacePx);
+          if (penPx > yieldBufferPx) {
+             // Cut material down, leaving yieldBufferPx
+             stockLengthIn -= (penPx - yieldBufferPx) / pxPerIn; 
+             stockLenPx = stockLengthIn * pxPerIn;
+             stockRightX = chuckX + stockLenPx;
+          }
         }
+      }
+    }
+    
+    // SEPARATE CHECK: Face wall when approaching from RIGHT (outside, in empty air)
+    // This is outside the radial bounds check so it works when tool is outside stock
+    // distFromFacePx = toolTipXpx - stockRightX; (positive = in empty air to right)
+    float distFromFaceForWall = toolTipXpx - stockRightX;
+    
+    // DEBUG: Print face-from-right check every 60 frames
+    if (frameCount % 60 == 0) {
+      println("Face-from-right: distFromFace=" + distFromFaceForWall + ", toolTipDist=" + toolTipDistFromCenter + ", stockRadius=" + stockRadiusPx);
+    }
+    
+    // CRASH DETECTION: Tool hits face from right at 0 RPM
+    if (spindleRPM == 0 && distFromFaceForWall >= 0 && distFromFaceForWall <= 5.0) {
+      // Tool is in empty air, very close to face (within 5 pixels = contact)
+      // AND tool is within the radial bounds of the stock (would hit face)
+      if (toolTipDistFromCenter <= stockRadiusPx + collisionMargin) {
+        hasCrashed = true;  // CRASH!
       }
     }
     
@@ -870,16 +707,28 @@ void drawMainView() {
     // This prevents sub-pixel bias where one side cuts deeper than the other.
     float effectiveToolX = round(toolTipXpx);
     
-    // Determine loop range based on snapped position
-    int startZ = floor(effectiveToolX - toolHalfWidth - chuckX) - 2;
-    int endZ = ceil(effectiveToolX + toolHalfWidth - chuckX) + 2;
-    
-    // Clamp to stock bounds
-    startZ = max(0, startZ);
-    endZ = min(stockProfileLen - 1, endZ);
-    
+    // Declare variables before if/else block for proper scoping
     float maxRadialPenetrationPx = 0;
     float netAxialAreaPx = 0; // Net axial overlap area (sum of depths)
+    int startZ = 0;
+    int endZ = 0;
+    
+    // FIX: If tool is completely past the stock, no RADIAL collision possible!
+    // But AXIAL (face) collision can still happen if approaching from right
+    // Check if left edge of tool is past right edge of stock
+    if (effectiveToolX - toolHalfWidth > stockRightX) {
+        // Tool is in empty space - no RADIAL feedback (but axialCollision may still be set from face)
+        radialCollision = false;
+        // Note: axialCollision is NOT reset here - it was set above if approaching face from right
+    } else {
+    
+    // Determine loop range based on snapped position
+    startZ = floor(effectiveToolX - toolHalfWidth - chuckX) - 2;
+    endZ = ceil(effectiveToolX + toolHalfWidth - chuckX) + 2;
+    
+    // Clamp to stock profile bounds (allows full tool width processing)
+    startZ = max(0, startZ);
+    endZ = min(stockProfileLen - 1, endZ);  // Use profile length for material removal
     
     // DEBUG
     if (frameCount % 30 == 0 && radialCollision) {
@@ -915,6 +764,11 @@ void drawMainView() {
                     if (distFromSurface < 0) {
              // COLLISION DETECTED
              radialCollision = true;
+             
+             // CRASH: If spindle is 0 and we hit stock, it's a crash
+             if (spindleRPM == 0) {
+               hasCrashed = true;
+             }
              
              // Calculate penetration
              float penPx = -distFromSurface;
@@ -958,18 +812,49 @@ void drawMainView() {
         vibFreq = 0.0;
     }
     
-             // Material Removal with Yield Buffer
-             float yieldBufferPx = 1.0;
-             float newRadius = toolRadiusAtZ + yieldBufferPx;
-             
-             if (penPx > yieldBufferPx) {
-                // Cut material down (ONLY if new radius is smaller)
-                if (stockProfile[z] > newRadius) {
-                    stockProfile[z] = newRadius;
+              // Material Removal with Yield Buffer
+              // ONLY remove material if spindle is running (RPM > 0)
+              if (spindleRPM > 0) {
+                float yieldBufferPx = 1.0;
+                float newRadius = toolRadiusAtZ + yieldBufferPx;
+                
+                if (penPx > yieldBufferPx) {
+                   // Cut material down (ONLY if new radius is smaller)
+                   if (stockProfile[z] > newRadius) {
+                       stockProfile[z] = newRadius;
+                   }
                 }
-             }
+              }
+              // When spindle is off, collision is detected but no material removed
+              // (virtual wall behavior - 100x damping already applied by Pico)
           }
        }
+    }
+    
+    // PARTING-OFF: When tool TIP passes through center of stock
+    // Use toolTipDistFromCenter directly (tool tip Y distance from centerline)
+    // effectiveToolX is the tool tip X position, convert to Z index
+    if (spindleRPM > 0 && toolTipDistFromCenter <= 10.0) {
+      // Tool tip has reached/passed the centerline
+      int tipZIndex = int(effectiveToolX - chuckX);
+      
+      // Remove all material from tool tip position to the end (parting off)
+      if (tipZIndex >= 0 && tipZIndex < stockProfileLen) {
+        for (int partZ = tipZIndex; partZ < stockProfileLen; partZ++) {
+          stockProfile[partZ] = 0;
+        }
+        // Update stock length
+        stockLengthIn = float(tipZIndex) / pxPerIn;
+        stockLenPx = stockLengthIn * pxPerIn;
+        stockRightX = chuckX + stockLenPx;
+      }
+      
+      // ALSO: Zero out the V-tool groove to the LEFT of the tip (the nub)
+      // This removes material the tool shoulders are cutting through
+      int leftEdge = max(0, int(effectiveToolX - toolHalfWidth - chuckX));
+      for (int grooveZ = leftEdge; grooveZ < tipZIndex && grooveZ < stockProfileLen; grooveZ++) {
+        stockProfile[grooveZ] = 0;  // Tool has passed through here - no material left
+      }
     }
     
     // DEBUG: Print loop range and netArea
@@ -1003,6 +888,8 @@ void drawMainView() {
        }
     }
     
+    } // End of "tool is within stock bounds" else block
+    
     // 3. Determine Haptic Feedback
     // If activeAxis is Z, we only feel Axial collisions
     // If activeAxis is X, we only feel Radial collisions
@@ -1013,19 +900,17 @@ void drawMainView() {
        checkCollision = true;
        xh = axialPenetration;
        
-       // FORCE DIRECTION LOGIC FOR Z-AXIS
-       // Reverting to previous logic as inversion caused "no feedback".
-       // If netAxialAreaPx > 0, we assume we need to push RIGHT? (Or Suction was actually correct direction but unstable?)
-       // Let's go back to:
-       // NetArea > 0 -> forceSign = -1.0
-       // NetArea < 0 -> forceSign = 1.0
+       // FORCE DIRECTION LOGIC FOR Z-AXIS (REVERSED for new movement direction)
+       // Movement was reversed, so force direction needs to reverse too
+       // NetArea > 0 -> forceSign = 1.0 (was -1.0)
+       // NetArea < 0 -> forceSign = -1.0 (was 1.0)
        
        if (netAxialAreaPx > 0) {
-          forceSign = -1.0; 
+          forceSign = 1.0;  // REVERSED
        } else if (netAxialAreaPx < 0) {
-          forceSign = 1.0;
+          forceSign = -1.0;  // REVERSED
        } else {
-          forceSign = -1.0; // Default
+          forceSign = 1.0; // Default (REVERSED)
        }
        println("🔴 AXIAL COLLISION (Z) - NetArea: " + netAxialAreaPx + ", Sign: " + forceSign);
     } else if (activeAxis.equals("X") && radialCollision) {
@@ -1035,14 +920,9 @@ void drawMainView() {
        // Let's try 500.0 as a middle ground
        xh = radialPenetration * 5.0; // Boost radial penetration signal
        
-       // Radial: Want Push OUT (Positive X).
-       // Handle Logic: Positive Delta (CW) = Move IN. Negative Delta (CCW) = Move OUT.
-       // We want to push OUT -> Push Negative (CCW).
-       // Pico Logic: wall_dir = 1 -> Push Negative (Left/CCW).
-       // So we need wall_dir = 1.
-       // Bridge Logic: Force > 0 -> wall_dir = 1.
-       // So we need Force > 0.
-       forceSign = 1.0; 
+       // Radial: REVERSED - now push IN (Negative direction)
+       // Movement was reversed, so force direction needs to reverse too
+       forceSign = -1.0;  // REVERSED (was 1.0)
        println("🔴 RADIAL COLLISION (X) - Pen: " + radialPenetration + ", ForceSign: " + forceSign);
     } else {
        checkCollision = false;
@@ -1182,71 +1062,6 @@ void drawFooter() {
   text(status, padding, y + footerH / 2);
 }
 
-// Add motor control section to right panel
-void drawMotorControl(float x, float y, float w, float h) {
-  drawSubPanelBox(x, y, w, h, "Motor Control");
-
-  float innerX = x + 10;
-  float innerY = y + 35;
-  float btnW = (w - 30) / 3;
-  float btnH = 25;
-  float spacing = 8;
-
-  // Motor control buttons
-  // Row 1: Forward, Stop, Reverse
-  drawControlButton(innerX, innerY, btnW, btnH, "Forward", color(0, 180, 0));
-  drawControlButton(innerX + btnW + spacing, innerY, btnW, btnH, "Stop", color(180, 0, 0));
-  drawControlButton(innerX + 2*(btnW + spacing), innerY, btnW, btnH, "Reverse", color(0, 100, 200));
-
-  innerY += btnH + spacing;
-
-  // Row 2: Slow, Medium, Fast speed buttons
-  drawControlButton(innerX, innerY, btnW, btnH, "Slow", color(150, 150, 150));
-  drawControlButton(innerX + btnW + spacing, innerY, btnW, btnH, "Medium", color(100, 100, 100));
-  drawControlButton(innerX + 2*(btnW + spacing), innerY, btnW, btnH, "Fast", color(50, 50, 50));
-
-  innerY += btnH + spacing + 10;
-
-  // Axis selector (X/Z)
-  fill(0);
-  textSize(11);
-  text("Active Axis:", innerX, innerY);
-  innerY += 16;
-  
-  float axisBtnW = (w - 30) / 2;
-  float axisBtnH = 22;
-  color xColor = (activeAxis.equals("X")) ? color(100, 200, 100) : color(200, 200, 200);
-  color zColor = (activeAxis.equals("Z")) ? color(100, 200, 100) : color(200, 200, 200);
-  
-  drawControlButton(innerX, innerY, axisBtnW, axisBtnH, "X (Radial)", xColor);
-  drawControlButton(innerX + axisBtnW + 5, innerY, axisBtnW, axisBtnH, "Z (Axial)", zColor);
-  innerY += axisBtnH + 10;
-
-  // Position readout and controls
-  fill(0);
-  textSize(12);
-  text("Encoder Position: " + nf(physicalHandlePosition, 0, 2) + "°", innerX, innerY);
-  innerY += 18;
-
-  // Manual position control
-  float posBtnW = (w - 40) / 4;
-  float posBtnH = 20;
-
-  drawControlButton(innerX, innerY, posBtnW, posBtnH, "-10°", color(200, 200, 200));
-  drawControlButton(innerX + posBtnW + 5, innerY, posBtnW, posBtnH, "-1°", color(200, 200, 200));
-  drawControlButton(innerX + 2*(posBtnW + 5), innerY, posBtnW, posBtnH, "+1°", color(200, 200, 200));
-  drawControlButton(innerX + 3*(posBtnW + 5), innerY, posBtnW, posBtnH, "+10°", color(200, 200, 200));
-
-  innerY += posBtnH + 10;
-
-  // Current motor status
-  fill(0);
-  textSize(11);
-  text("Motor Status: " + (bridgeConnected ? "Connected" : "Disconnected"), innerX, innerY);
-  innerY += 14;
-  text("Speed: " + (bridgeConnected ? "Variable RPM" : "N/A"), innerX, innerY);
-}
-
 // Helper function to draw control buttons
 void drawControlButton(float x, float y, float w, float h, String label, color btnColor) {
   // Button background
@@ -1350,36 +1165,18 @@ void drawRightPanel() {
 
     innerY += 190;
 
-  // Tolerance summary (existing)
-  drawSubPanelBox(innerX, innerY, sectionW, 120, "Tolerance Summary");
-  lineY = innerY + 40;
-
-  // Skill-based tolerance
-  boolean anySkill2 = beginnerSelected || intermediateSelected || advancedSelected;
-  String tolStr2;
-  if (!anySkill2 || beginnerSelected) {
-    tolStr2 = "± 0.010 in";
-  } else if (intermediateSelected) {
-    tolStr2 = "± 0.005 in";
-  } else {
-    tolStr2 = "± 0.002 in";
-  }
-
-  fill(0);
-  textSize(12);
-  text("Current tolerance: " + tolStr2, innerX + 10, lineY);
-  lineY += 18;
-  text("Position accuracy depends on", innerX + 10, lineY);
-  lineY += 14;
-  text("skill level and setup precision.", innerX + 10, lineY);
-
-  innerY += 130;
-
-  // Add motor control section at the bottom
-  float motorControlH = h - (innerY - y) - padding;
-  if (motorControlH > 100) {  // Only draw if there's enough space
-    drawMotorControl(innerX, innerY, sectionW, motorControlH);
-  }
+  // Axis Selection (moved here from Motor Control)
+  drawSubPanelBox(innerX, innerY, sectionW, 70, "Axis Selection");
+  lineY = innerY + 45;
+  
+  float axisBtnW = (sectionW - 15) / 2;
+  float axisBtnH = 28;
+  
+  color xColor = (activeAxis.equals("X")) ? color(100, 200, 100) : color(200, 200, 200);
+  color zColor = (activeAxis.equals("Z")) ? color(100, 200, 100) : color(200, 200, 200);
+  
+  drawControlButton(innerX, lineY - 10, axisBtnW, axisBtnH, "X (Radial)", xColor);
+  drawControlButton(innerX + axisBtnW + 5, lineY - 10, axisBtnW, axisBtnH, "Z (Axial)", zColor);
 }
 
 // Main draw loop
@@ -1399,6 +1196,26 @@ void draw() {
   drawLeftPanel();
   drawMainView();   // compute tool tip + X/Z first
   drawRightPanel(); // then use them in live readouts
+
+  // CRASH OVERLAY: Show if tool hit stock at 0 RPM
+  if (hasCrashed) {
+    // Dark red overlay
+    fill(150, 0, 0, 200);
+    noStroke();
+    rect(0, 0, width, height);
+    
+    // Crash message
+    fill(255);
+    textAlign(CENTER, CENTER);
+    textSize(72);
+    text("YOU CRASHED!", width/2, height/2 - 40);
+    textSize(24);
+    text("Tool hit stock with spindle off", width/2, height/2 + 30);
+    text("Restart the program to continue", width/2, height/2 + 70);
+    
+    // Stop sending any forces - don't process further
+    return;
+  }
 
   // Request status updates periodically
   if (bridgeConnected && frameCount % 30 == 0) {  // Every 0.5 seconds at 60fps

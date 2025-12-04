@@ -321,7 +321,7 @@ class MotorController:
         # Clamp force and store for debugging/telemetry
         self.wall_force_newtons = max(0.0, min(force_newtons, 50.0))
         self.force_command = self.wall_force_newtons
-        self.vib_freq = max(1.0, min(vib_freq, 200.0)) # Clamp frequency 1-200Hz
+        self.vib_freq = max(0.0, min(vib_freq, 200.0)) # Allow 0 for spindle off, max 200Hz
         self.yield_force = max(1.0, min(yield_force, 50.0)) # Clamp yield 1-50N
 
         # Legacy compatibility: if wall_flag looks like an RPM, use its sign as a hint
@@ -418,12 +418,23 @@ class MotorController:
         # Base damping coefficient
         cdamping = 500.0  # [N*s/m] - Base tunable damping coefficient
         
-        # SPINDLE OFF = 100x DAMPING (almost locked)
+        # SPINDLE OFF = VERY HIGH DAMPING (virtual wall feel)
         # Check if spindle is running based on vib_freq hint (set to 0 when spindle off)
-        # Actually, we can use wall_force_newtons or a new spindle flag
-        # For now, use vib_freq: if 0, spindle is off
         if not hasattr(self, 'vib_freq') or self.vib_freq < 1.0:
-            cdamping *= 100.0  # Spindle off - very hard to move
+            cdamping = 10000.0  # 20x stronger when spindle off
+        
+        # Calculate velocity in m/s at the handle (like Hapkit dxh)
+        rh = 0.05  # [m] Handle radius
+        velocity_rpm = self.get_velocity_rpm()
+        # Convert RPM to m/s: RPM -> rad/s -> m/s
+        velocity_mps = (velocity_rpm / 60.0) * 2 * math.pi * rh
+        
+        # Apply IIR filter like Hapkit: dxh_filt = 0.9*dxh + 0.1*dxh_prev
+        if not hasattr(self, 'dxh_filt'):
+            self.dxh_filt = 0.0
+            self.dxh_prev = 0.0
+        self.dxh_filt = 0.9 * velocity_mps + 0.1 * self.dxh_prev
+        self.dxh_prev = velocity_mps
         
         # Scale damping by penetration depth for cutting feel
         # Deeper = more resistance
