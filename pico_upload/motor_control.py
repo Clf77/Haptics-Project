@@ -387,6 +387,18 @@ class MotorController:
             self.motor_in2.value(0)
             return
 
+        # MAX PENETRATION CHECK - No feedback past the stock!
+        # Stock is about 4.5" = ~114mm. Map encoder degs to mm.
+        # With 50mm handle radius: 1 deg = 0.87mm arc.
+        # Let's say max penetration is ~200 degrees (about stock length)
+        max_penetration_deg = 200.0
+        if penetration_deg > max_penetration_deg:
+            # Past the stock - no resistance (air cutting)
+            self.motor_ena.duty_u16(0)
+            self.motor_in1.value(0)
+            self.motor_in2.value(0)
+            return
+
         # USER IS CUTTING - Apply damping
         
         # Calculate velocity in m/s at the handle (like Hapkit dxh)
@@ -403,8 +415,15 @@ class MotorController:
         self.dxh_prev = velocity_mps
         
         # DAMPING FORCE: F = -cdamping * velocity
-        # Reference uses cdamping = 5.0 N*s/m, we scale up for our system
-        cdamping = 500.0  # [N*s/m] - Tunable damping coefficient
+        # Base damping coefficient
+        cdamping = 500.0  # [N*s/m] - Base tunable damping coefficient
+        
+        # SPINDLE OFF = 100x DAMPING (almost locked)
+        # Check if spindle is running based on vib_freq hint (set to 0 when spindle off)
+        # Actually, we can use wall_force_newtons or a new spindle flag
+        # For now, use vib_freq: if 0, spindle is off
+        if not hasattr(self, 'vib_freq') or self.vib_freq < 1.0:
+            cdamping *= 100.0  # Spindle off - very hard to move
         
         # Scale damping by penetration depth for cutting feel
         # Deeper = more resistance

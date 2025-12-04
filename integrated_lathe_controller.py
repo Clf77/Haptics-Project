@@ -318,6 +318,11 @@ class LatheController:
                 self.vib_freq = data.get("freq", 10.0)
                 self.yield_force = data.get("yield", 50.0) # Default to rigid
                 
+                # SPINDLE OFF = Very high damping (100x)
+                # Use vib_freq=0 to signal spindle off to Pico
+                if self.spindle_rpm < 1.0:
+                    self.vib_freq = 0.0
+                
                 if self.haptic_active and self.pico_serial:
                     physical_force = (self.haptic_force / 100.0) * 50.0
                     
@@ -332,7 +337,7 @@ class LatheController:
                         
                     # Send absolute force magnitude, direction is handled by wall_active sign
                     self.send_to_pico(f"spring_wall {abs(physical_force):.2f} {wall_active} {self.vib_freq:.1f} {self.yield_force:.1f}")
-                    print(f"🧱 Wall: {physical_force:.1f}N, Dir: {wall_active}, Freq: {self.vib_freq:.1f}Hz")
+                    print(f"🧱 Wall: {physical_force:.1f}N, Dir: {wall_active}, Freq: {self.vib_freq:.1f}Hz, Spindle: {self.spindle_rpm:.0f}RPM")
                 elif not self.haptic_active and self.pico_serial:
                     self.send_to_pico("spring_wall 0 0")
                     
