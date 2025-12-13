@@ -69,12 +69,12 @@ boolean pathSelected         = false;
 String activeAxis = "Z";  // Default to Z-axis (axial movement)
 
 // ----- Material Selection -----
-int selectedMaterial = 1;  // 0=Delrin, 1=Al 6061, 2=SS316
-String[] materialNames = {"Delrin", "Al 6061", "SS316"};
-float[] materialDamping = {50000.0, 100000.0, 150000.0};  // k_wall values [N/m]
-float[] materialYield = {25.0, 50.0, 75.0};  // Yield force [N]: Delrin=50% Al, SS316=150% Al
-// Material colors: Delrin=cream/white, Al 6061=silver, SS316=dark steel
-int materialColorDelrin, materialColorAl6061, materialColorSS316;
+int selectedMaterial = 1;  // 0=Delrin, 1=Al 6061, 2=SS316, 3=Inconel
+String[] materialNames = {"Delrin", "Al 6061", "SS316", "Inconel"};
+float[] materialDamping = {50000.0, 100000.0, 150000.0, 200000.0};  // k_wall values [N/m] - Inconel=2x Al
+float[] materialYield = {25.0, 50.0, 75.0, 100.0};  // Yield force [N]: Inconel=2x Al
+// Material colors: Delrin=cream/white, Al 6061=silver, SS316=dark steel, Inconel=bronze
+int materialColorDelrin, materialColorAl6061, materialColorSS316, materialColorInconel;
 
 // ----- Momentary button flash timing (ms) -----
 int flashDuration    = 200;   // how long buttons stay green after click
@@ -147,6 +147,7 @@ void setup() {
   materialColorDelrin = color(240, 235, 220);  // Cream/white
   materialColorAl6061 = color(168, 169, 173);  // Silver
   materialColorSS316 = color(128, 134, 139);   // Dark steel
+  materialColorInconel = color(165, 113, 78);  // Bronze/copper tone
 
   // Initialize TCP Connection
   connectToBridge();
@@ -184,15 +185,15 @@ void connectToBridge() {
     bridgeClient = new Client(this, bridgeHost, bridgePort);
     if (bridgeClient.active()) {
       bridgeConnected = true;
-      println("✅ Connected to Bridge via TCP");
+      // println("✅ Connected to Bridge via TCP");
       // Send initial status request
       sendToBridge("{\"type\":\"status_request\"}");
     } else {
       bridgeConnected = false;
-      println("⚠️ Could not connect to Bridge");
+      // println("⚠️ Could not connect to Bridge");
     }
   } catch (Exception e) {
-    println("❌ Connection error: " + e);
+    // println("❌ Connection error: " + e);
     bridgeConnected = false;
   }
 }
@@ -205,7 +206,7 @@ void checkBridgeConnection() {
     bridgeConnected = false;
     // Auto-reconnect
     if (millis() - lastReconnectAttempt > reconnectInterval) {
-      println("🔄 Attempting to reconnect...");
+      // println("🔄 Attempting to reconnect...");
       connectToBridge();
       lastReconnectAttempt = millis();
     }
@@ -218,7 +219,7 @@ void sendToBridge(String jsonString) {
     try {
       bridgeClient.write(jsonString + "\n");
     } catch (Exception e) {
-      println("Error sending to bridge: " + e);
+      // println("Error sending to bridge: " + e);
       bridgeConnected = false;
     }
   }
@@ -241,7 +242,7 @@ void checkBridgeMessages() {
         }
       }
     } catch (Exception e) {
-      println("Error reading bridge data: " + e);
+      // println("Error reading bridge data: " + e);
     }
   }
 }
@@ -308,6 +309,8 @@ void drawLeftPanel() {
   drawOutlinedButton(innerX, innerY, "Al 6061", selectedMaterial == 1);
   innerY += 25;
   drawOutlinedButton(innerX, innerY, "SS316", selectedMaterial == 2);
+  innerY += 25;
+  drawOutlinedButton(innerX, innerY, "Inconel", selectedMaterial == 3);
 }
 
 // Modify mousePressed() to send commands to bridge
@@ -354,7 +357,7 @@ void mousePressed() {
     
     lastHandlePosition = physicalHandlePosition; // Sync encoder
     firstBridgeUpdate = true; // Reset the first update flag
-    println("Reset Workpiece: Stock rebuilt, tool @ Z=" + currentToolZ + ", X=" + currentToolX);
+    // println("Reset Workpiece: Stock rebuilt, tool @ Z=" + currentToolZ + ", X=" + currentToolX);
   }
   leftInnerY += 30;
   
@@ -363,7 +366,7 @@ void mousePressed() {
     zeroXFlashStart = millis();
     xZeroOffsetIn = rawXIn;
     sendToBridge("{\"type\":\"zero_position\",\"axis\":\"x\"}");
-    println("Zero X clicked");
+    // println("Zero X clicked");
   }
   leftInnerY += 30;
   
@@ -372,7 +375,7 @@ void mousePressed() {
     zeroZFlashStart = millis();
     zZeroOffsetIn = rawZIn;
     sendToBridge("{\"type\":\"zero_position\",\"axis\":\"z\"}");
-    println("Zero Z clicked");
+    // println("Zero Z clicked");
   }
   leftInnerY += 30;
   
@@ -383,21 +386,28 @@ void mousePressed() {
   // Delrin button
   if (overRect(leftInnerX, leftInnerY - 11, 180, 22)) {
     selectedMaterial = 0;
-    println("Material: Delrin (k_wall = 50000 N/m)");
+    // println("Material: Delrin (k_wall = 50000 N/m)");
   }
   leftInnerY += 25;
   
   // Al 6061 button
   if (overRect(leftInnerX, leftInnerY - 11, 180, 22)) {
     selectedMaterial = 1;
-    println("Material: Al 6061 (k_wall = 100000 N/m)");
+    // println("Material: Al 6061 (k_wall = 100000 N/m)");
   }
   leftInnerY += 25;
   
   // SS316 button
   if (overRect(leftInnerX, leftInnerY - 11, 180, 22)) {
     selectedMaterial = 2;
-    println("Material: SS316 (k_wall = 150000 N/m)");
+    // println("Material: SS316 (k_wall = 150000 N/m)");
+  }
+  leftInnerY += 25;
+  
+  // Inconel button
+  if (overRect(leftInnerX, leftInnerY - 11, 180, 22)) {
+    selectedMaterial = 3;
+    // println("Material: Inconel (k_wall = 200000 N/m)");
   }
 
   // Handle axis selection buttons (in right panel after Cutting Parameters)
@@ -414,11 +424,11 @@ void mousePressed() {
   if (overRect(innerX, innerY, axisBtnW, axisBtnH)) {
     activeAxis = "X";
     sendToBridge("{\"type\":\"axis_select\",\"axis\":\"X\"}");
-    println("Axis: X (Radial)");
+    // println("Axis: X (Radial)");
   } else if (overRect(innerX + axisBtnW + 5, innerY, axisBtnW, axisBtnH)) {
     activeAxis = "Z";
     sendToBridge("{\"type\":\"axis_select\",\"axis\":\"Z\"}");
-    println("Axis: Z (Axial)");
+    // println("Axis: Z (Axial)");
   }
 }
 
@@ -433,14 +443,15 @@ void keyPressed() {
     } else {
        activeAxis = "X";
     }
-    println("Active Axis Toggled to: " + activeAxis);
+    // println("Active Axis Toggled to: " + activeAxis);
   }
 
   // Toggle between mouse and physical input
   if (key == 'p' || key == 'P') {
     usePhysicalInput = !usePhysicalInput;
-    println("Physical input: " + (usePhysicalInput ? "ON" : "OFF"));
+    // println("Physical input: " + (usePhysicalInput ? "ON" : "OFF"));
   }
+  
   
   // Handle numeric input for Spindle Speed
   if (activeField == 1) {
@@ -456,6 +467,21 @@ void keyPressed() {
         spindleRPM = float(spindleStr);
         updateCuttingParameters();
       }
+    }
+  }
+  
+  // Arrow keys control spindle speed (50 RPM increments)
+  if (key == CODED) {
+    if (keyCode == UP) {
+      spindleRPM += 50;
+      spindleRPM = min(spindleRPM, 3000);  // Max 3000 RPM
+      spindleStr = nf(int(spindleRPM), 0);
+      updateCuttingParameters();
+    } else if (keyCode == DOWN) {
+      spindleRPM -= 50;
+      spindleRPM = max(spindleRPM, 0);  // Min 0 RPM
+      spindleStr = nf(int(spindleRPM), 0);
+      updateCuttingParameters();
     }
   }
 }
@@ -532,7 +558,8 @@ void drawMainView() {
   // Stock color based on selected material
   if (selectedMaterial == 0) fill(materialColorDelrin);
   else if (selectedMaterial == 1) fill(materialColorAl6061);
-  else fill(materialColorSS316);
+  else if (selectedMaterial == 2) fill(materialColorSS316);
+  else fill(materialColorInconel);
   stroke(0);
   
   // Render Stock Profile using beginShape
@@ -713,7 +740,7 @@ void drawMainView() {
       
       // DEBUG FACING
       if (frameCount % 60 == 0) {
-         println("Face Check: Dist=" + distFromFacePx + ", Radial=" + toolTipDistFromCenter + " vs " + faceRadius);
+         // println("Face Check: Dist=" + distFromFacePx + ", Radial=" + toolTipDistFromCenter + " vs " + faceRadius);
       }
       
       if (distFromFacePx < 0) {
@@ -739,7 +766,7 @@ void drawMainView() {
     
     // DEBUG: Print face-from-right check every 60 frames
     if (frameCount % 60 == 0) {
-      println("Face-from-right: distFromFace=" + distFromFaceForWall + ", toolTipDist=" + toolTipDistFromCenter + ", stockRadius=" + stockRadiusPx);
+      // println("Face-from-right: distFromFace=" + distFromFaceForWall + ", toolTipDist=" + toolTipDistFromCenter + ", stockRadius=" + stockRadiusPx);
     }
     
     // CRASH DETECTION: Tool hits face from right at 0 RPM
@@ -787,7 +814,7 @@ void drawMainView() {
     
     // DEBUG
     if (frameCount % 30 == 0 && radialCollision) {
-        println("DEBUG: startZ=" + startZ + ", endZ=" + endZ + ", toolTipXpx=" + toolTipXpx + ", chuckX=" + chuckX);
+        // println("DEBUG: startZ=" + startZ + ", endZ=" + endZ + ", toolTipXpx=" + toolTipXpx + ", chuckX=" + chuckX);
     }
     
     for (int z = startZ; z <= endZ; z++) {
@@ -917,8 +944,8 @@ void drawMainView() {
     
     // DEBUG: Print loop range and netArea
     if (frameCount % 60 == 0 && (radialCollision || axialCollision)) {
-        println("🔍 LOOP DEBUG: startZ=" + startZ + ", endZ=" + endZ + ", toolTipXpx=" + toolTipXpx + ", chuckX=" + chuckX);
-        println("🔍 NetArea=" + netAxialAreaPx + ", radialColl=" + radialCollision + ", axialColl=" + axialCollision);
+        // println("🔍 LOOP DEBUG: startZ=" + startZ + ", endZ=" + endZ + ", toolTipXpx=" + toolTipXpx + ", chuckX=" + chuckX);
+        // println("🔍 NetArea=" + netAxialAreaPx + ", radialColl=" + radialCollision + ", axialColl=" + axialCollision);
     }
     
     if (radialCollision) {
@@ -973,7 +1000,7 @@ void drawMainView() {
        } else {
           forceSign = 1.0; // Default (REVERSED)
        }
-       println("🔴 AXIAL COLLISION (Z) - NetArea: " + netAxialAreaPx + ", Sign: " + forceSign);
+       // println("🔴 AXIAL COLLISION (Z) - NetArea: " + netAxialAreaPx + ", Sign: " + forceSign);
     } else if (activeAxis.equals("X") && radialCollision) {
        checkCollision = true;
        // Restore gain for Radial (it needs to be strong to feel the wall)
@@ -984,7 +1011,7 @@ void drawMainView() {
        // Radial: REVERSED - now push IN (Negative direction)
        // Movement was reversed, so force direction needs to reverse too
        forceSign = -1.0;  // REVERSED (was 1.0)
-       println("🔴 RADIAL COLLISION (X) - Pen: " + radialPenetration + ", ForceSign: " + forceSign);
+       // println("🔴 RADIAL COLLISION (X) - Pen: " + radialPenetration + ", ForceSign: " + forceSign);
     } else {
        checkCollision = false;
        xh = 0;
@@ -1015,7 +1042,7 @@ void drawMainView() {
     currentForce = force;  // Store actual force in Newtons
     toolCollision = true;
     
-    println("🔴 COLLISION (" + activeAxis + "): pen=" + (penetration*1000) + "mm, F=" + force + "N");
+    // println("🔴 COLLISION (" + activeAxis + "): pen=" + (penetration*1000) + "mm, F=" + force + "N");
   } else {
     // Outside virtual wall - no force
     force = 0.0;
