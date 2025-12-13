@@ -28,7 +28,9 @@ class MotorController:
         self.encoder_b = Pin(7, Pin.IN, Pin.PULL_UP)  # GP7, Pico pin 10 (yellow wire)
 
         # Motor control pins for dual H-bridge controller
-        self.motor_ena = PWM(Pin(0))  # GP0, Pico pin 1 - PWM for speed (ENA)
+        self.motor_ena_pin = Pin(0)  # GP0 raw pin reference
+        self.motor_ena = PWM(self.motor_ena_pin)  # GP0, Pico pin 1 - PWM for speed (ENA)
+        self.motor_ena_enabled = True  # Track if PWM is active
         self.motor_in1 = Pin(2, Pin.OUT)  # GP2, Pico pin 4 - Direction control (IN1)
         self.motor_in2 = Pin(1, Pin.OUT)  # GP1, Pico pin 2 - Direction control (IN2)
 
@@ -145,9 +147,10 @@ class MotorController:
             return
 
         if abs(speed_rpm) < 0.1:  # Stop threshold
-            self.motor_ena.duty_u16(0)
-            self.motor_in1.value(0)
-            self.motor_in2.value(0)
+            self.motor_disable()  # True free spin
+            # Set both IN pins HIGH for symmetric coast
+            self.motor_in1.value(1)
+            self.motor_in2.value(1)
             self.last_motion_sign = 0
             return
 
@@ -169,6 +172,7 @@ class MotorController:
         duty_percent = min(abs(speed_rpm) / max_rpm, 1.0)
 
         duty_value = int(self.min_pwm + (self.max_pwm - self.min_pwm) * duty_percent)
+        self.motor_enable()  # Ensure PWM mode is active
         self.motor_ena.duty_u16(duty_value)
 
     def _apply_haptic_brake(self):
@@ -230,13 +234,28 @@ class MotorController:
 
     def stop_motor(self):
         """Stop the motor"""
-        self.motor_ena.duty_u16(0)
+        self.motor_disable()  # Drive ENA LOW for true free spin
         self.motor_in1.value(0)
         self.motor_in2.value(0)
         self.target_velocity = 0.0
         self.last_motion_sign = 0
         self.wall_engaged = False
         self.control_mode = "velocity"
+
+    def motor_disable(self):
+        """Disable motor by driving ENA LOW as GPIO (true free spin)"""
+        if self.motor_ena_enabled:
+            self.motor_ena.deinit()  # Stop PWM
+            self.motor_ena_pin = Pin(0, Pin.OUT)  # Switch to GPIO output
+            self.motor_ena_pin.value(0)  # Drive LOW
+            self.motor_ena_enabled = False
+
+    def motor_enable(self):
+        """Re-enable motor PWM control"""
+        if not self.motor_ena_enabled:
+            self.motor_ena = PWM(Pin(0))  # Re-init as PWM
+            self.motor_ena.freq(1000)
+            self.motor_ena_enabled = True
 
     def hold_position_here(self):
         """Capture current encoder position and hold it with PID."""
@@ -278,9 +297,10 @@ class MotorController:
 
         if abs(motor_rpm) < 0.1:
             # No movement required - hold position with minimal torque
-            self.motor_ena.duty_u16(0)
-            self.motor_in1.value(0)
-            self.motor_in2.value(0)
+            self.motor_disable()  # True free spin
+            # Set both IN pins HIGH for symmetric coast
+            self.motor_in1.value(1)
+            self.motor_in2.value(1)
         else:
             # Active motor driving to create force
             if motor_rpm > 0:
@@ -335,9 +355,10 @@ class MotorController:
             self.wall_engaged = False
             self.haptic_brake_percent = 0.0
             self.control_mode = "velocity"
-            self.motor_ena.duty_u16(0)
-            self.motor_in1.value(0)
-            self.motor_in2.value(0)
+            self.motor_disable()  # Drive ENA LOW for true free spin
+            # Set both IN pins HIGH for symmetric coast
+            self.motor_in1.value(1)
+            self.motor_in2.value(1)
             return
 
         if not self.wall_engaged:
@@ -382,9 +403,10 @@ class MotorController:
 
         # If we're outside the wall surface (not cutting), free the motor
         if penetration_deg < self.wall_release_tol_deg:
-            self.motor_ena.duty_u16(0)
-            self.motor_in1.value(0)
-            self.motor_in2.value(0)
+            self.motor_disable()  # True free spin
+            # Set both IN pins HIGH for symmetric coast
+            self.motor_in1.value(1)
+            self.motor_in2.value(1)
             return
 
         # MAX PENETRATION CHECK - No feedback past the stock!
@@ -394,9 +416,10 @@ class MotorController:
         max_penetration_deg = 200.0
         if penetration_deg > max_penetration_deg:
             # Past the stock - no resistance (air cutting)
-            self.motor_ena.duty_u16(0)
-            self.motor_in1.value(0)
-            self.motor_in2.value(0)
+            self.motor_disable()  # True free spin
+            # Set both IN pins HIGH for symmetric coast
+            self.motor_in1.value(1)
+            self.motor_in2.value(1)
             return
 
         # USER IS CUTTING - Apply damping
@@ -467,7 +490,8 @@ class MotorController:
             self.motor_in1.value(0)
             self.motor_in2.value(1)
         
-        # Apply PWM
+        # Apply PWM - ensure motor is in PWM mode first
+        self.motor_enable()
         duty_value = int(self.min_pwm + (self.max_pwm - self.min_pwm) * duty)
         self.motor_ena.duty_u16(duty_value)
         

@@ -1,4 +1,4 @@
-import processing.net.*;
+      import processing.net.*;
 
 // Haptic Lathe Simulator GUI - Integrated with Physical Motor
 // - TCP Socket communication with Python bridge
@@ -611,9 +611,7 @@ void drawMainView() {
       float delta = physicalHandlePosition - lastHandlePosition;
       lastHandlePosition = physicalHandlePosition;
       
-      // Apply movement scale (sensitivity)
-      float movementScale = 1.0; 
-      
+      // Apply movement scale (sensitivity)      
       if (activeAxis.equals("Z")) {
         // Z-axis (axial): Move tool along Z
         // REVERSED: Negative delta = Move Right (Positive Z)
@@ -764,7 +762,6 @@ void drawMainView() {
     // Declare variables before if/else block for proper scoping
     float maxRadialPenetrationPx = 0;
     float netAxialAreaPx = 0; // Net axial overlap area (sum of depths)
-    float netRadialAreaPx = 0; // Net radial overlap area (sum of depths)
     int startZ = 0;
     int endZ = 0;
     
@@ -832,9 +829,6 @@ void drawMainView() {
              if (penPx > maxRadialPenetrationPx) {
                  maxRadialPenetrationPx = penPx;
              }
-             
-             // Accumulate Net Radial Area (same approach as axial)
-             netRadialAreaPx += penPx;
              
              // Accumulate Net Axial Area
              // If z < effectiveToolX (Left side), we add positive area?
@@ -922,10 +916,7 @@ void drawMainView() {
     }
     
     if (radialCollision) {
-       // Convert Net Radial Area [px^2] to Effective Penetration [m] using same formula as axial
-       float radialAreaIn2 = netRadialAreaPx / (pxPerIn * pxPerIn);
-       float radialAreaM2 = radialAreaIn2 * 0.00064516; // 1 in^2 = 0.00064516 m^2
-       radialPenetration = abs(radialAreaM2) * 45.0;  // Same 30x scale as axial
+       radialPenetration = maxRadialPenetrationPx / pxPerIn * 0.0254;
     }
     
     // Convert Net Area [px^2] to Effective Penetration [m] for Haptics
@@ -938,7 +929,7 @@ void drawMainView() {
     // We want F = k * x_eff ~ Area.
     // Heuristic: 1mm^2 Area (1e-6 m^2) should feel like ~1mm Penetration (1e-3 m)
     // Scaling Factor = 1000.0 -> REDUCED to 100.0 -> REDUCED by 70% to 30.0
-    float effectivePenetrationM = abs(netAreaM2) * 45.0;  // Increased 1.5x from 30.0
+    float effectivePenetrationM = abs(netAreaM2) * 30.0;
     
     // If we have a net axial force, we should flag axial collision too?
     if (effectivePenetrationM > 0.00001) { // Threshold
@@ -979,7 +970,7 @@ void drawMainView() {
        // Restore gain for Radial (it needs to be strong to feel the wall)
        // Axial gain was reduced to 100.0, but Radial might need more?
        // Let's try 500.0 as a middle ground
-       xh = radialPenetration; // Same as axial (removed 5x multiplier)
+       xh = radialPenetration * 5.0; // Boost radial penetration signal
        
        // Radial: REVERSED - now push IN (Negative direction)
        // Movement was reversed, so force direction needs to reverse too
