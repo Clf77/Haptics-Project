@@ -162,10 +162,7 @@ void setup() {
   
   // Start Z at center of stock
   currentToolZ = chuckX + stockLenPx * 0.50;
-  
-  // Start X well outside the stock (below it)
-  // Start X well outside the stock (below it)
-  currentToolX = centerY + stockRadiusPx + 40; // 40px clearance
+  currentToolX = centerY + stockRadiusPx + 40;
   
   // Initialize Stock Profile
   initStockProfile();
@@ -738,11 +735,6 @@ void drawMainView() {
     if (toolTipDistFromCenter <= faceRadius + collisionMargin) {
       float distFromFacePx = toolTipXpx - stockRightX;
       
-      // DEBUG FACING
-      if (frameCount % 60 == 0) {
-         // println("Face Check: Dist=" + distFromFacePx + ", Radial=" + toolTipDistFromCenter + " vs " + faceRadius);
-      }
-      
       if (distFromFacePx < 0) {
         // Tool is INSIDE the stock (left of face)
         // Material Removal with Yield Buffer (only when spindle is ON)
@@ -761,13 +753,7 @@ void drawMainView() {
     
     // SEPARATE CHECK: Face wall when approaching from RIGHT (outside, in empty air)
     // This is outside the radial bounds check so it works when tool is outside stock
-    // distFromFacePx = toolTipXpx - stockRightX; (positive = in empty air to right)
     float distFromFaceForWall = toolTipXpx - stockRightX;
-    
-    // DEBUG: Print face-from-right check every 60 frames
-    if (frameCount % 60 == 0) {
-      // println("Face-from-right: distFromFace=" + distFromFaceForWall + ", toolTipDist=" + toolTipDistFromCenter + ", stockRadius=" + stockRadiusPx);
-    }
     
     // CRASH DETECTION: Tool hits face from right at 0 RPM
     if (spindleRPM == 0 && distFromFaceForWall >= 0 && distFromFaceForWall <= 5.0) {
@@ -778,14 +764,8 @@ void drawMainView() {
       }
     }
     
-    // 2. Check Radial (Turning) - V-TOOL LOGIC
-    // Iterate over the tool's width to check for collisions with the V-shape
-    // 2. Check Radial (Turning) - V-TOOL LOGIC
-    // Iterate over the tool's width to check for collisions with the V-shape
-    // tipW and tipH are already defined above
+    // V-TOOL radial collision
     float toolHalfWidth = tipW / 2.0;
-    // SNAP TOOL TO INTEGER GRID FOR SYMMETRY
-    // This prevents sub-pixel bias where one side cuts deeper than the other.
     float effectiveToolX = round(toolTipXpx);
     
     // Declare variables before if/else block for proper scoping
@@ -942,12 +922,6 @@ void drawMainView() {
       }
     }
     
-    // DEBUG: Print loop range and netArea
-    if (frameCount % 60 == 0 && (radialCollision || axialCollision)) {
-        // println("🔍 LOOP DEBUG: startZ=" + startZ + ", endZ=" + endZ + ", toolTipXpx=" + toolTipXpx + ", chuckX=" + chuckX);
-        // println("🔍 NetArea=" + netAxialAreaPx + ", radialColl=" + radialCollision + ", axialColl=" + axialCollision);
-    }
-    
     if (radialCollision) {
        // Convert Net Radial Area [px^2] to Effective Penetration [m] using same formula as axial
        float radialAreaIn2 = netRadialAreaPx / (pxPerIn * pxPerIn);
@@ -955,25 +929,13 @@ void drawMainView() {
        radialPenetration = abs(radialAreaM2) * 45.0;  // Same 30x scale as axial
     }
     
-    // Convert Net Area [px^2] to Effective Penetration [m] for Haptics
-    // Force should be proportional to Area.
-    // 1. Convert px^2 to m^2
     float netAreaIn2 = netAxialAreaPx / (pxPerIn * pxPerIn);
-    float netAreaM2 = netAreaIn2 * 0.00064516; // 1 in^2 = 0.00064516 m^2
+    float netAreaM2 = netAreaIn2 * 0.00064516;
+    float effectivePenetrationM = abs(netAreaM2) * 45.0;
     
-    // 2. Scale to Effective Penetration
-    // We want F = k * x_eff ~ Area.
-    // Heuristic: 1mm^2 Area (1e-6 m^2) should feel like ~1mm Penetration (1e-3 m)
-    // Scaling Factor = 1000.0 -> REDUCED to 100.0 -> REDUCED by 70% to 30.0
-    float effectivePenetrationM = abs(netAreaM2) * 45.0;  // Increased 1.5x from 30.0
-    
-    // If we have a net axial force, we should flag axial collision too?
-    if (effectivePenetrationM > 0.00001) { // Threshold
-       // Only override if not hitting the face (which is a hard stop)
-       if (!axialCollision) {
-          axialCollision = true;
-          axialPenetration = effectivePenetrationM;
-       }
+    if (effectivePenetrationM > 0.00001 && !axialCollision) {
+       axialCollision = true;
+       axialPenetration = effectivePenetrationM;
     }
     
     } // End of "tool is within stock bounds" else block
@@ -982,16 +944,11 @@ void drawMainView() {
     // If activeAxis is Z, we only feel Axial collisions
     // If activeAxis is X, we only feel Radial collisions
     
-    float forceSign = 0; // Declare variable for force direction
+    float forceSign = 0;
     
     if (activeAxis.equals("Z") && axialCollision) {
        checkCollision = true;
        xh = axialPenetration;
-       
-       // FORCE DIRECTION LOGIC FOR Z-AXIS (REVERSED for new movement direction)
-       // Movement was reversed, so force direction needs to reverse too
-       // NetArea > 0 -> forceSign = 1.0 (was -1.0)
-       // NetArea < 0 -> forceSign = -1.0 (was 1.0)
        
        if (netAxialAreaPx > 0) {
           forceSign = 1.0;  // REVERSED

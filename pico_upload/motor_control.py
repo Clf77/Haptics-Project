@@ -337,12 +337,10 @@ class MotorController:
             yield_force: Force at which wall moves (cuts) [N] (default 50.0)
         """
         # Clamp force and store for debugging/telemetry
-        self.wall_force_newtons = max(0.0, min(force_newtons, 100.0))  # Increased cap to 100N
-        # Clamp force and store for debugging/telemetry
-        self.wall_force_newtons = max(0.0, min(force_newtons, 100.0))  # Increased cap to 100N
+        self.wall_force_newtons = max(0.0, min(force_newtons, 100.0))
         self.force_command = self.wall_force_newtons
-        self.vib_freq = max(0.0, min(vib_freq, 200.0)) # Allow 0 for spindle off, max 200Hz
-        self.yield_force = max(1.0, min(yield_force, 50.0)) # Clamp yield 1-50N
+        self.vib_freq = max(0.0, min(vib_freq, 200.0))
+        self.yield_force = max(1.0, min(yield_force, 50.0))
 
         # Legacy compatibility: if wall_flag looks like an RPM, use its sign as a hint
         direction_hint = None
@@ -351,12 +349,10 @@ class MotorController:
         active = self.wall_force_newtons > 0.0 and wall_flag != 0
 
         if not active:
-            # Release the wall and let the handle spin freely
             self.wall_engaged = False
             self.haptic_brake_percent = 0.0
             self.control_mode = "velocity"
-            self.motor_disable()  # Drive ENA LOW for true free spin
-            # Set both IN pins HIGH for symmetric coast
+            self.motor_disable()
             self.motor_in1.value(1)
             self.motor_in2.value(1)
             return
@@ -422,35 +418,22 @@ class MotorController:
             self.motor_in2.value(1)
             return
 
-        # USER IS CUTTING - Apply damping
-        
-        # Calculate velocity in m/s at the handle (like Hapkit dxh)
-        rh = 0.05  # [m] Handle radius
+        rh = 0.05
         velocity_rpm = self.get_velocity_rpm()
-        # Convert RPM to m/s: RPM -> rad/s -> m/s
         velocity_mps = (velocity_rpm / 60.0) * 2 * math.pi * rh
         
-        # Apply IIR filter like Hapkit: dxh_filt = 0.9*dxh + 0.1*dxh_prev
         if not hasattr(self, 'dxh_filt'):
             self.dxh_filt = 0.0
             self.dxh_prev = 0.0
         self.dxh_filt = 0.9 * velocity_mps + 0.1 * self.dxh_prev
         self.dxh_prev = velocity_mps
         
-        # DAMPING FORCE: F = -cdamping * velocity
-        # Base damping coefficient - SCALED BY GUI FORCE REQUEST for material feel
-        # Base cdamping for 50N reference force - INCREASED for more noticeable feel
-        base_cdamping = 2000.0  # [N*s/m] - Increased from 500 for stronger material feel
-        
-        # Scale by GUI force request: higher force = stiffer material
-        # wall_force_newtons is 50N for Al, 75N for SS316 (+50%), 25N for Delrin (-50%)
+        base_cdamping = 2000.0
         force_scale = self.wall_force_newtons / 50.0 if self.wall_force_newtons > 0 else 1.0
         cdamping = base_cdamping * force_scale
         
-        # SPINDLE OFF = VERY HIGH DAMPING (virtual wall feel)
-        # Check if spindle is running based on vib_freq hint (set to 0 when spindle off)
         if not hasattr(self, 'vib_freq') or self.vib_freq < 1.0:
-            cdamping = 10000.0  # 20x stronger when spindle off
+            cdamping = 10000.0
         
         # Calculate velocity in m/s at the handle (like Hapkit dxh)
         rh = 0.05  # [m] Handle radius
@@ -490,7 +473,6 @@ class MotorController:
             self.motor_in1.value(0)
             self.motor_in2.value(1)
         
-        # Apply PWM - ensure motor is in PWM mode first
         self.motor_enable()
         duty_value = int(self.min_pwm + (self.max_pwm - self.min_pwm) * duty)
         self.motor_ena.duty_u16(duty_value)
