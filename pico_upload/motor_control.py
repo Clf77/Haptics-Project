@@ -317,9 +317,9 @@ class MotorController:
             yield_force: Force at which wall moves (cuts) [N] (default 50.0)
         """
         # Clamp force and store for debugging/telemetry
-        self.wall_force_newtons = max(0.0, min(force_newtons, 50.0))
+        self.wall_force_newtons = max(0.0, min(force_newtons, 100.0))  # Increased cap to 100N
         # Clamp force and store for debugging/telemetry
-        self.wall_force_newtons = max(0.0, min(force_newtons, 50.0))
+        self.wall_force_newtons = max(0.0, min(force_newtons, 100.0))  # Increased cap to 100N
         self.force_command = self.wall_force_newtons
         self.vib_freq = max(0.0, min(vib_freq, 200.0)) # Allow 0 for spindle off, max 200Hz
         self.yield_force = max(1.0, min(yield_force, 50.0)) # Clamp yield 1-50N
@@ -415,8 +415,14 @@ class MotorController:
         self.dxh_prev = velocity_mps
         
         # DAMPING FORCE: F = -cdamping * velocity
-        # Base damping coefficient
-        cdamping = 500.0  # [N*s/m] - Base tunable damping coefficient
+        # Base damping coefficient - SCALED BY GUI FORCE REQUEST for material feel
+        # Base cdamping for 50N reference force - INCREASED for more noticeable feel
+        base_cdamping = 2000.0  # [N*s/m] - Increased from 500 for stronger material feel
+        
+        # Scale by GUI force request: higher force = stiffer material
+        # wall_force_newtons is 50N for Al, 75N for SS316 (+50%), 25N for Delrin (-50%)
+        force_scale = self.wall_force_newtons / 50.0 if self.wall_force_newtons > 0 else 1.0
+        cdamping = base_cdamping * force_scale
         
         # SPINDLE OFF = VERY HIGH DAMPING (virtual wall feel)
         # Check if spindle is running based on vib_freq hint (set to 0 when spindle off)
@@ -443,8 +449,8 @@ class MotorController:
         
         force = -self.dxh_filt * cdamping * (1.0 + depth_scale)
         
-        # Cap force magnitude
-        force = max(-50.0, min(50.0, force))
+        # Cap force magnitude - increased to 100N for material differentiation
+        force = max(-100.0, min(100.0, force))
         
         # Calculate motor torque (Hapkit formula)
         Tp = force * rh / self.gear_ratio

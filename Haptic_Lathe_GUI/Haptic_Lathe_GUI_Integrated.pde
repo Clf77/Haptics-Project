@@ -68,6 +68,14 @@ boolean pathSelected         = false;
 // Axis selection (X = radial, Z = axial)
 String activeAxis = "Z";  // Default to Z-axis (axial movement)
 
+// ----- Material Selection -----
+int selectedMaterial = 1;  // 0=Delrin, 1=Al 6061, 2=SS316
+String[] materialNames = {"Delrin", "Al 6061", "SS316"};
+float[] materialDamping = {50000.0, 100000.0, 150000.0};  // k_wall values [N/m]
+float[] materialYield = {25.0, 50.0, 75.0};  // Yield force [N]: Delrin=50% Al, SS316=150% Al
+// Material colors: Delrin=cream/white, Al 6061=silver, SS316=dark steel
+int materialColorDelrin, materialColorAl6061, materialColorSS316;
+
 // ----- Momentary button flash timing (ms) -----
 int flashDuration    = 200;   // how long buttons stay green after click
 int resetFlashStart  = -1000;
@@ -134,6 +142,11 @@ void setup() {
   headerFill  = color(230);
   footerFill  = color(230);
   accentFill  = color(240);
+  
+  // Material colors (must be inside a Processing context)
+  materialColorDelrin = color(240, 235, 220);  // Cream/white
+  materialColorAl6061 = color(168, 169, 173);  // Silver
+  materialColorSS316 = color(128, 134, 139);   // Dark steel
 
   // Initialize TCP Connection
   connectToBridge();
@@ -282,6 +295,19 @@ void drawLeftPanel() {
 
   // Zero Z (momentary) - just draw, action in mousePressed
   drawOutlinedButton(innerX, innerY, "Zero Z", false);
+  innerY += 30;
+  
+  // ----- Stock Material Section -----
+  innerY += 10;  // Extra spacing
+  drawSubPanelTitle(innerX, innerY + 10, "Stock Material");
+  innerY += 35;
+  
+  // Material buttons (using drawOutlinedButton with selected state)
+  drawOutlinedButton(innerX, innerY, "Delrin", selectedMaterial == 0);
+  innerY += 25;
+  drawOutlinedButton(innerX, innerY, "Al 6061", selectedMaterial == 1);
+  innerY += 25;
+  drawOutlinedButton(innerX, innerY, "SS316", selectedMaterial == 2);
 }
 
 // Modify mousePressed() to send commands to bridge
@@ -347,6 +373,31 @@ void mousePressed() {
     zZeroOffsetIn = rawZIn;
     sendToBridge("{\"type\":\"zero_position\",\"axis\":\"z\"}");
     println("Zero Z clicked");
+  }
+  leftInnerY += 30;
+  
+  // ----- Material Selection Buttons -----
+  leftInnerY += 10;  // Extra spacing for title
+  leftInnerY += 35;  // Skip "Stock Material" title
+  
+  // Delrin button
+  if (overRect(leftInnerX, leftInnerY - 11, 180, 22)) {
+    selectedMaterial = 0;
+    println("Material: Delrin (k_wall = 50000 N/m)");
+  }
+  leftInnerY += 25;
+  
+  // Al 6061 button
+  if (overRect(leftInnerX, leftInnerY - 11, 180, 22)) {
+    selectedMaterial = 1;
+    println("Material: Al 6061 (k_wall = 100000 N/m)");
+  }
+  leftInnerY += 25;
+  
+  // SS316 button
+  if (overRect(leftInnerX, leftInnerY - 11, 180, 22)) {
+    selectedMaterial = 2;
+    println("Material: SS316 (k_wall = 150000 N/m)");
   }
 
   // Handle axis selection buttons (in right panel after Cutting Parameters)
@@ -478,7 +529,10 @@ void drawMainView() {
   float t = millis() / 1000.0;
   float angularPos = TWO_PI * spindleRPM * t / 60.0;
 
-  fill(180);
+  // Stock color based on selected material
+  if (selectedMaterial == 0) fill(materialColorDelrin);
+  else if (selectedMaterial == 1) fill(materialColorAl6061);
+  else fill(materialColorSS316);
   stroke(0);
   
   // Render Stock Profile using beginShape
@@ -543,8 +597,8 @@ void drawMainView() {
                sendFz = currentForce; 
            }
            
-           // Send
-           bridgeClient.write("FORCE:" + nf(sendFx, 0, 2) + "," + nf(sendFz, 0, 2) + "," + nf(vibFreq, 0, 1) + "\n");
+           // Send with yield value for material
+           bridgeClient.write("FORCE:" + nf(sendFx, 0, 2) + "," + nf(sendFz, 0, 2) + "," + nf(vibFreq, 0, 1) + "," + nf(materialYield[selectedMaterial], 0, 1) + "\n");
            lastBridgeUpdate = millis();
        }
     // Relative positioning logic
@@ -710,6 +764,7 @@ void drawMainView() {
     // Declare variables before if/else block for proper scoping
     float maxRadialPenetrationPx = 0;
     float netAxialAreaPx = 0; // Net axial overlap area (sum of depths)
+    float netRadialAreaPx = 0; // Net radial overlap area (sum of depths)
     int startZ = 0;
     int endZ = 0;
     
@@ -777,6 +832,9 @@ void drawMainView() {
              if (penPx > maxRadialPenetrationPx) {
                  maxRadialPenetrationPx = penPx;
              }
+             
+             // Accumulate Net Radial Area (same approach as axial)
+             netRadialAreaPx += penPx;
              
              // Accumulate Net Axial Area
              // If z < effectiveToolX (Left side), we add positive area?
@@ -864,7 +922,10 @@ void drawMainView() {
     }
     
     if (radialCollision) {
-       radialPenetration = maxRadialPenetrationPx / pxPerIn * 0.0254;
+       // Convert Net Radial Area [px^2] to Effective Penetration [m] using same formula as axial
+       float radialAreaIn2 = netRadialAreaPx / (pxPerIn * pxPerIn);
+       float radialAreaM2 = radialAreaIn2 * 0.00064516; // 1 in^2 = 0.00064516 m^2
+       radialPenetration = abs(radialAreaM2) * 30.0;  // Same 30x scale as axial
     }
     
     // Convert Net Area [px^2] to Effective Penetration [m] for Haptics
@@ -918,7 +979,7 @@ void drawMainView() {
        // Restore gain for Radial (it needs to be strong to feel the wall)
        // Axial gain was reduced to 100.0, but Radial might need more?
        // Let's try 500.0 as a middle ground
-       xh = radialPenetration * 5.0; // Boost radial penetration signal
+       xh = radialPenetration; // Same as axial (removed 5x multiplier)
        
        // Radial: REVERSED - now push IN (Negative direction)
        // Movement was reversed, so force direction needs to reverse too
@@ -933,7 +994,7 @@ void drawMainView() {
 
   // Virtual wall parameters
   float wall_position = 0.0;  // Wall is at surface (0mm penetration)
-  float k_wall = 100000.0;    // Wall stiffness [N/m]
+  float k_wall = materialDamping[selectedMaterial];    // Wall stiffness [N/m] - based on material
 
   // Calculate force using Hapkit virtual wall algorithm
   float force = 0.0;
@@ -945,12 +1006,12 @@ void drawMainView() {
     force = k_wall * penetration;  // Positive force pushes back
     
     // Cap force at maximum
-    force = min(force, 50.0);  // Max 50N
+    force = min(force, 100.0);  // Max 100N
     
     // Apply Direction Sign
     force = force * forceSign;
     
-    collisionForce = map(force, -50, 50, -100, 100);  // Scale to -100 to 100 range
+    collisionForce = map(force, -100, 100, -100, 100);  // Scale to -100 to 100 range
     currentForce = force;  // Store actual force in Newtons
     toolCollision = true;
     
@@ -992,8 +1053,8 @@ void drawMainView() {
                sendFz = currentForce; 
            }
            
-           // Send
-           bridgeClient.write("FORCE:" + nf(sendFx, 0, 2) + "," + nf(sendFz, 0, 2) + "," + nf(vibFreq, 0, 1) + "\n");
+           // Send with yield value for material
+           bridgeClient.write("FORCE:" + nf(sendFx, 0, 2) + "," + nf(sendFz, 0, 2) + "," + nf(vibFreq, 0, 1) + "," + nf(materialYield[selectedMaterial], 0, 1) + "\n");
            lastBridgeUpdate = millis();
        }
     }
@@ -1160,7 +1221,7 @@ void drawRightPanel() {
 
   // Material & coolant
   fill(0);
-  text("Material: Mild Steel", innerX + 10, lineY); lineY += lineH;
+  text("Material: " + materialNames[selectedMaterial], innerX + 10, lineY); lineY += lineH;
   text("Coolant: On / Off",    innerX + 10, lineY);
 
     innerY += 190;

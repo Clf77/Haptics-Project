@@ -158,21 +158,21 @@ class LatheController:
                     # Handle "FORCE:" command (High-speed haptic update)
                     if cmd_str.startswith("FORCE:"):
                         try:
-                            # Format: FORCE:Fx,Fz,Freq
+                            # Format: FORCE:Fx,Fz,Freq,Yield
                             parts = cmd_str.split(":")[1].split(",")
                             if len(parts) >= 3:
                                 fx = float(parts[0])
                                 fz = float(parts[1])
                                 freq = float(parts[2])
+                                yield_force = float(parts[3]) if len(parts) >= 4 else 50.0  # Default 50N
                                 
                                 # Construct a command dict compatible with process_gui_command
-                                # But we might want to process it directly here for speed?
-                                # Let's create a special dict
                                 last_valid_cmd = {
                                     "type": "haptic_vector",
                                     "fx": fx,
                                     "fz": fz,
-                                    "freq": freq
+                                    "freq": freq,
+                                    "yield": yield_force
                                 }
                         except ValueError:
                             print(f"Invalid FORCE command: {cmd_str}")
@@ -342,29 +342,23 @@ class LatheController:
                     self.send_to_pico("spring_wall 0 0")
                     
             elif cmd_type == "haptic_vector":
-                # New high-speed vector format
+                # New high-speed vector format with material yield
                 fx = data.get("fx", 0.0)
                 fz = data.get("fz", 0.0)
                 freq = data.get("freq", 0.0)
+                yield_force = data.get("yield", 50.0)  # Material-specific yield
                 
-                # Determine which axis is active/dominant or combine them?
-                # Currently Pico only supports 1D "spring_wall".
-                # We need to map Fx/Fz to the single motor axis based on active mode.
-                # But the GUI already sends 0 for the inactive axis.
-                
+                # Determine which axis is active/dominant
                 total_force = fx if abs(fx) > abs(fz) else fz
                 
                 # Map to Pico direction
-                # Force > 0 -> Wall Dir 1 (Push Left/CCW)
-                # Force < 0 -> Wall Dir -1 (Push Right/CW)
                 direction = 1 if total_force >= 0 else -1
                 force_mag = abs(total_force)
                 
-                # Send to Pico
-                # Use direction * 2 to ensure abs(flag) > 1.0, forcing Pico to use our direction hint
+                # Send to Pico with yield value
                 wall_flag = direction * 2
                 
-                self.send_to_pico(f"spring_wall {force_mag:.2f} {wall_flag} {freq:.1f}")
+                self.send_to_pico(f"spring_wall {force_mag:.2f} {wall_flag} {freq:.1f} {yield_force:.1f}")
 
         except json.JSONDecodeError as e:
             print(f"Error processing GUI command: {e}")
