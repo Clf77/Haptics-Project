@@ -919,7 +919,7 @@ void drawMainView() {
     // PARTING-OFF: When tool TIP passes through center of stock
     // Use toolTipDistFromCenter directly (tool tip Y distance from centerline)
     // effectiveToolX is the tool tip X position, convert to Z index
-    if (spindleRPM > 0 && toolTipDistFromCenter <= 10.0) {
+    if (spindleRPM > 0 && toolTipDistFromCenter <= 2.0) {  // Parting only at true center
       // Tool tip has reached/passed the centerline
       int tipZIndex = int(effectiveToolX - chuckX);
       
