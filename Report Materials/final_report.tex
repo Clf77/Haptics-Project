@@ -30,7 +30,7 @@
 % Title information
 \title{\textbf{Haptic Lathe Simulator}\\
 \large MAE 6800: Design and Control of Haptic Systems\\
-Fall 2024}
+Fall 2025}
 
 \author{Caleb Farrelly, Daria Kot, and Richard Zheng\\
 Cornell University}
@@ -42,7 +42,7 @@ Cornell University}
 \maketitle
 
 \begin{abstract}
-We present the design and implementation of a haptic lathe training device that simulates the tactile experience of operating a manual lathe. The system integrates a directly-driven handwheel with a virtual lathe environment, providing force feedback based on tool-material interaction, spindle speed, and cutting depth. Using a geared DC motor with quadrature encoder as the haptic interface and a Processing-based graphical user interface, the device enables trainees to develop muscle memory for common machining operations in a low-risk setting. The haptic rendering algorithm employs a damping-based virtual wall model derived from the Hapkit framework, with material-specific force profiles for Delrin, Aluminum 6061, Stainless Steel 316, and Inconel. This paper details the system architecture, hardware implementation, control algorithms, and force rendering equations.
+We present the design and implementation of a haptic lathe training device that simulates the tactile experience of operating a manual lathe. The system integrates a directly-driven handwheel with a virtual lathe environment, providing force feedback based on tool-material interaction, spindle speed, and cutting depth. Using a geared DC motor with a quadrature encoder as the haptic interface and a Processing-based graphical user interface, the device enables trainees to develop muscle memory for common machining operations in a low-risk setting. The haptic rendering algorithm employs a damping-based virtual wall model derived from the Hapkit framework, with material-specific force profiles for Delrin, Aluminum 6061, Stainless Steel 316, and Inconel. This paper details the system architecture, hardware implementation, control algorithms, and force rendering equations.
 \end{abstract}
 
 \tableofcontents
@@ -54,9 +54,9 @@ We present the design and implementation of a haptic lathe training device that 
 
 \subsection{Motivation}
 
-Traditional lathe training requires physical machines, expert supervision, and carries inherent risks including injury and material waste. Novice machinists must develop proper ``feel'' for cutting operations---understanding when cuts are too aggressive, when tools are dull, and how different materials behave under the cutting tool. This tactile intuition typically requires hundreds of hours of hands-on experience.
+Traditional lathe training relies on access to full-scale machines and close expert supervision, and it carries inherent risks including injury, tool damage, and material waste. Novice machinists must develop the tactile “feel” of cutting—recognizing overly aggressive feeds, dull tools, chatter onset, and material-dependent behavior at the tool–workpiece interface. Developing this intuition typically requires extensive hands-on practice.
 
-Haptic technology offers a compelling solution: virtual training environments that provide realistic force feedback without the risks and costs of physical machining. By coupling a physical handwheel interface with a virtual lathe simulation, trainees can practice operations such as facing, turning to diameter, and boring while experiencing representative cutting forces.
+Haptic technology offers a safer and more accessible alternative: virtual training environments that provide force feedback without the cost or hazard of physical machining. We present a two-DOF haptic lathe simulator that reproduces the hand-feel of manual lathe operation using a directly driven handwheel that can be toggled between the X cross-slide and Z carriage axes. A virtual lathe environment renders stock geometry, tool position, target drawings, and tolerances, and live X/Z readouts. The system computes and reflects cutting forces and torques as functions of spindle speed, feed, and depth of cut, enabling trainees to practice core operations such as facing and turning to diameter while building correct muscle memory in a low-risk setting.
 
 \subsection{Educational Objectives}
 
@@ -67,12 +67,23 @@ The Haptic Lathe Simulator is designed to achieve the following educational obje
 
     \item \textbf{Material Differentiation}: Different materials (Delrin, Aluminum, Stainless Steel, Inconel) present distinct force profiles, teaching users to recognize and adapt to material properties.
 
-    \item \textbf{Safety Awareness}: The system simulates crash conditions when the tool contacts the workpiece with the spindle stopped, reinforcing safe operating procedures.
+    \item \textbf{Safety Awareness}: The system simulates crash conditions when the tool contacts the workpiece with the spindle stopped and provides increased haptic resistance for overly aggressive cutting attempts, reinforcing safe operating procedures and proper feed control.
 
     \item \textbf{Cutting Parameter Understanding}: Users experience how spindle speed, feed rate, and depth of cut affect cutting forces, developing intuition for optimal parameters.
 \end{enumerate}
 
-\subsection{System Overview}
+\subsection{Prior Work in Haptic Machining Simulation}
+
+A complementary user study by \cite{ieeeT4E2018} examined the perceived importance of haptic cues at the lathe handwheel across beginner, intermediate, and expert operators. Using a questionnaire-based methodology and chi-square analysis, the study found a statistically significant relationship between operator experience and perceived force intensity: beginners reported strong reliance on haptic feedback, whereas expert users perceived weaker force cues. These findings suggest that physically meaningful handwheel feedback plays a critical role during early motor-skill acquisition and motivate the inclusion of haptics in lathe training simulators.
+
+Significant prior work has explored force-feedback interfaces for virtual machining, with an emphasis on modeling tool--workpiece interaction and material removal in real time. Early systems such as the Haptic Virtual Turning Operation System (HVTOS) employed efficient workpiece deformation algorithms to generate continuous force feedback as a function of cutting depth and material properties \cite{he2006haptic}. However, force feedback in this work was rendered using a commercial PHANToM haptic device, which, while capable of high-fidelity kinesthetic output, is expensive and does not reflect the mechanical interaction of a manual lathe, where feedback is transmitted through a rotating handwheel.
+
+Subsequent research expanded virtual machining toward immersive visual and mixed-reality training platforms, emphasizing three-dimensional visualization, task sequencing, and safety instruction rather than physically rendered cutting forces \cite{ieee8590115, sciencedirect2016, springer2023vr}. In many of these systems, user interaction is limited to kinematic input—such as rotating a handwheel or manipulating a virtual tool—without explicit force or torque feedback. As a result, training is driven primarily by visual cues and procedural guidance, with limited representation of the kinesthetic sensations inherent to real machining. Educational implementations such as the \textit{Turnin’ and Burnin’} lathe similarly focus on visual understanding of machining operations and geometry while omitting continuous, physically meaningful haptic feedback through the handwheel \cite{turninburnin}.
+
+In contrast, the haptic lathe simulator presented in this work emphasizes the continuous, parameter-dependent hand feel of manual lathe operation. By using a directly driven handwheel and a damping-based force rendering model explicitly tied to feed rate, spindle speed, depth of cut, and material properties, our system prioritizes kinesthetic realism and muscle-memory development. This approach targets the aspects of manual machining most critical during early skill acquisition and distinguishes our work from prior visually focused or device-centric haptic simulators.
+
+
+\section {System Overview}
 
 The haptic lathe simulator consists of three primary subsystems:
 
@@ -84,19 +95,15 @@ The haptic lathe simulator consists of three primary subsystems:
     \item \textbf{Control Bridge}: A Python-based communication layer that manages bidirectional data flow between the GUI and microcontroller while computing haptic forces.
 \end{enumerate}
 
-%==============================================================================
-\section{Background}
-%==============================================================================
 
-\subsection{Prior Work in Haptic Machining Simulation}
 
-Several research efforts have explored haptic feedback for machining training:
+\subsection{Project Scope 
+}
+The presented work demonstrates the principles of machining with real-time force feedback to replicate the two primary control inputs of a conventional manual lathe: the X cross-slide and the Z carriage. The resultant device is a two-DOF haptic trainer featuring one directly-driven handwheel to ensure high-fidelity transmission of simulated forces, with the operator being able to rapidly switch between the two axis. By concentrating the design on a low-inertia, directly-coupled system, the device minimizes parasitic friction and backlash, which are critical design considerations in high-precision mechanical assemblies. The system computes and reflects realistic cutting forces and torques based on operational variables, allowing trainees to practice basic machining operations (e.g., facing, turning to a specified diameter) in a safe virtual environment. 
 
-\textbf{He and Chen (2006)} presented the Haptic Virtual Turning Operation System (HVTOS), a prototype that simulates lathe machining with haptic, visual, and audio feedback using a PHANToM\textsuperscript{\textregistered} haptic device \cite{he2006haptic}. Their system employed spring-damper force models and NURBS-based workpiece deformation for real-time geometry updates.
 
-\textbf{Haptic milling simulators} have been developed using similar principles, demonstrating that force feedback significantly improves operator training outcomes compared to visual-only simulation \cite{millingref}.
 
-\textbf{The Hapkit platform} developed at Stanford provides an open-source framework for haptic device design and control, which informs our force rendering algorithms \cite{hapkit}.
+
 
 \subsection{Virtual Wall Rendering}
 
@@ -311,14 +318,18 @@ Motor Driver (H-Bridge) & 1 & \$15.70 \\
 \subsection{Mechanical Design}
 
 % PLACEHOLDER: Insert CAD images here
-\textit{[PLACEHOLDER: Insert CAD renderings of the motor mount, handwheel, and housing assembly]}
-
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\linewidth]{device.png}
+    \caption{CAD of the Lathe Simulator with transparent lid}
+    \label{fig:Lathe Simulator}
+\end{figure}
 The mechanical assembly includes:
 \begin{itemize}
-    \item 3D-printed motor mount with integrated standoffs
+    \item 3D-printed housing with integrated mounting for motor and boards
     \item 3D-printed handwheel (90mm OD) with ergonomic grip
     \item Shaft coupler connecting motor output to handwheel
-    \item Housing with board mount and self-tapping thread inserts
+    \item Flanged base for suction cup attachment and can be clamped to the table
 \end{itemize}
 
 %==============================================================================
@@ -442,6 +453,12 @@ Inconel & 200,000 & 100 & Bronze \\
 The 4:1 ratio between softest (Delrin) and hardest (Inconel) materials provides clear tactile differentiation.
 
 \subsection{Graphical User Interface}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\linewidth]{image.png}
+    \caption{Virtual Environment}
+    \label{fig:placeholder}
+\end{figure}
 
 The Processing-based GUI provides:
 
@@ -511,53 +528,7 @@ The system implements multiple safety layers:
 \end{enumerate}
 
 %==============================================================================
-\section{Experimentation}
-%==============================================================================
-
-% PLACEHOLDER: This section should be filled with actual experimental data
-
-\subsection{Experimental Setup}
-
-\textit{[PLACEHOLDER: Describe the experimental setup, including:
-\begin{itemize}
-    \item Physical configuration of the device
-    \item Test conditions and parameters
-    \item Data collection methods
-    \item Participant demographics (if user study conducted)
-\end{itemize}]}
-
-\subsection{Force Rendering Validation}
-
-\textit{[PLACEHOLDER: Present data validating the force rendering:
-\begin{itemize}
-    \item Measured vs. commanded force profiles
-    \item Material differentiation measurements
-    \item Frequency response of the haptic system
-    \item System latency measurements
-\end{itemize}]}
-
-\subsection{User Study}
-
-\textit{[PLACEHOLDER: If a pilot study was conducted, present:
-\begin{itemize}
-    \item Study protocol and tasks
-    \item Participant feedback
-    \item Quantitative performance metrics
-    \item Subjective ratings of realism
-\end{itemize}]}
-
-\subsection{Results}
-
-\textit{[PLACEHOLDER: Summarize key experimental findings:
-\begin{itemize}
-    \item Force rendering accuracy
-    \item User perception of material differences
-    \item Training effectiveness indicators
-    \item System reliability observations
-\end{itemize}]}
-
-%==============================================================================
-\section{Discussion}
+\section{Results}
 %==============================================================================
 
 \subsection{Design Decisions}
@@ -580,9 +551,70 @@ Several key design decisions shaped the final system:
     \item \textbf{No Force Sensing}: The system renders forces based on virtual geometry only; actual cutting force measurement would require additional sensors.
 
     \item \textbf{Motor Backdrive Friction}: The geared motor introduces friction that cannot be fully compensated, affecting transparency in free motion.
+
 \end{enumerate}
 
-\subsection{Future Work}
+\subsection{User Study
+}
+A formative user study was conducted during a public demonstration of the haptic lathe simulator to evaluate perceived realism, effectiveness of haptic feedback, and its impact on users’ understanding of lathe cutting dynamics. The study was intended as an exploratory assessment rather than a controlled experiment, focusing on qualitative and subjective user feedback.
+
+Participants interacted freely with the simulator and were encouraged to explore different materials, cutting depths, and operating conditions. After completing the interaction, participants completed a short questionnaire consisting of Likert-scale statements (1--10) and open-ended feedback.
+
+\subsection{Participants}
+
+A total of ten participants completed the study. The group included users with prior lathe experience as well as complete novices:
+\begin{itemize}
+    \item 8 participants reported prior experience operating a lathe
+    \item 3 participants had no prior lathe experience
+\end{itemize}
+
+This mix allowed us to capture feedback from both experienced users familiar with real machining and novices encountering lathe dynamics for the first time.
+
+\subsection{Measures}
+
+Participants rated their agreement with the following statements on a 10-point Likert scale (1 = strongly disagree, 10 = strongly agree):
+
+\begin{itemize}
+    \item The simulation was realistic.
+    \item The materials were differentiable from one another.
+    \item Force changes communicated tool engagement.
+    \item I could tell when I was doing something ``wrong'' based on feel alone.
+    \item The visual and haptic cues were synchronized.
+    \item The simulator helped me understand lathe cutting dynamics.
+\end{itemize}
+
+Participants were also asked whether they felt more confident operating a lathe after using the simulator (Yes/No) and were invited to provide open-ended comments.
+
+\subsection{Results}
+
+Overall responses were strongly positive across all evaluation dimensions. Mean scores across participants are summarized below:
+
+\begin{itemize}
+    \item \textbf{Perceived realism}: Mean = 8.9 / 10
+    \item \textbf{Material differentiation}: Mean = 9.0 / 10
+    \item \textbf{Force communicating tool engagement}: Mean = 9.0 / 10
+    \item \textbf{Error detection through haptics}: Mean = 8.3 / 10
+    \item \textbf{Visual--haptic synchronization}: Mean = 9.9 / 10
+    \item \textbf{Understanding of cutting dynamics}: Mean = 9.8 / 10
+\end{itemize}
+
+All participants reported increased confidence in operating a lathe after using the simulator.
+
+Qualitative feedback further reinforced these results. Participants frequently commented on the realism of the cutting feel and the clarity of force changes with depth of cut. Experienced users noted that the simulator closely matched their expectations of lathe behavior, particularly when engaging the tool or increasing cutting aggressiveness. Novice users reported that the haptic feedback helped them intuitively understand when a cut was too aggressive without relying solely on visual cues.
+
+Minor usability feedback focused on physical setup rather than haptic rendering. For example, one participant noted that suction cups used to secure the device occasionally distracted from immersion, suggesting opportunities for improved mechanical mounting in future iterations.
+
+\subsection{Discussion}
+
+The results suggest that the simulator successfully conveys key aspects of manual lathe operation through haptic feedback, particularly in communicating tool engagement, material differences, and unsafe cutting conditions. The consistently high ratings for visual--haptic synchronization indicate that the tight coupling between force rendering and graphical feedback contributed to a coherent user experience.
+
+Importantly, both experienced and novice users reported benefits, supporting the hypothesis that physically meaningful handwheel feedback can aid early skill acquisition while remaining recognizable to expert operators. While the small sample size limits statistical generalization, these findings align with prior work emphasizing the role of haptics in motor-skill learning and motivate further controlled studies with larger participant groups.
+
+
+
+%==============================================================================
+\section{Future Work}
+%==============================================================================
 
 \begin{enumerate}
     \item \textbf{Two-Axis Implementation}: Add a second motor/handwheel for simultaneous X and Z control.
@@ -615,27 +647,51 @@ The system demonstrates that effective haptic machining training can be achieved
 
 %==============================================================================
 \section*{Acknowledgements}
-%==============================================================================
+%======================================================
 
-\textit{[PLACEHOLDER: Acknowledge course instructors, lab resources, and any other support received during the project.]}
+AI systems used: Claude Opus 4.5 
+
+Prompt:
+"Understand the codebase and then make an engineering final project report in Latex , well formatted, describing the code and hardware implementation in detail with equations and concepts explained. Fill out the rest of the sections of the report (introduction, experimentation) with the information in the codebase or other files in the folder but do NOT make up information, instead make placeholders). Think if the content is logical. See '/Users/calebfarrelly/Downloads/HapticsProject/Report Materials/Checkpoints.docx' for background info on the project"
+
+Claude Opus 4.5 was used to convert existing codebase documentation and project notes into a well formatted LaTeX final report. The prompt instructed the system to read the repository and the provided background document, produce detailed implementation sections describing the software and hardware (including equations and concept explanations), and insert explicit placeholders wherever required information was missing rather than inventing results. This use primarily improved report structure, formatting quality, and clarity of code and hardware descriptions, while keeping technical content constrained to what was already present in the codebase and project files.
+
+Google Gemini was also selectively used to fix grammatical errors in this report and smooth out sentence structures. The AI was prompted "proof read, dont change tone and content, make list of changes and i will implement them". 
 
 %==============================================================================
 \begin{thebibliography}{9}
 
-\bibitem{he2006haptic}
-X. He and Y. Chen, ``A Haptic Virtual Turning Operation System,'' \textit{2006 International Conference on Mechatronics and Automation}, Luoyang, China, 2006, pp. 435-440.
+\begin{thebibliography}{99}
 
-\bibitem{millingref}
-\textit{[PLACEHOLDER: Add proper citation for milling simulator reference from IEEE: https://ieeexplore.ieee.org/document/8590115]}
+\bibitem{he2006haptic}
+X. He and Y. Chen, ``A Haptic Virtual Turning Operation System,'' in \textit{Proc. IEEE Int. Conf. on Mechatronics and Automation}, Luoyang, China, 2006, pp. 435--440.
+
+\bibitem{ieee8590115}
+S. B. Choudhury, S. K. Saha, and A. K. Mukherjee, ``A Virtual Machining Simulator for Training and Education,'' \textit{IEEE Trans. Learning Technologies}, vol. 12, no. 3, pp. 386--398, 2019.
+
+\bibitem{sciencedirect2016}
+S. Mishra, S. K. Saha, and A. K. Mukherjee, ``Development of a virtual machining environment with haptic feedback,'' \textit{Procedia Manufacturing}, vol. 5, pp. 538--549, 2016.
+
+\bibitem{springer2023vr}
+A. D. Silva, J. Pereira, and M. A. Otaduy, ``A virtual reality lathe simulator with visuo-haptic feedback for machining training,'' \textit{Virtual Reality}, vol. 27, no. 2, pp. 1121--1136, 2023.
+
+\bibitem{ieee5406525}
+C. Basdogan, S. De, J. Kim, M. Muniyandi, H. Kim, and M. A. Srinivasan, ``Haptics in minimally invasive surgical simulation and training,'' \textit{IEEE Computer Graphics and Applications}, vol. 24, no. 2, pp. 56--64, 2004.
+
+\bibitem{ieee4026122}
+K. Salisbury, F. Conti, and F. Barbagli, ``Haptic rendering: introductory concepts,'' \textit{IEEE Computer Graphics and Applications}, vol. 24, no. 2, pp. 24--32, 2004.
+
+\bibitem{ieeeT4E2018}
+A. Akshay, R. Raghavan, and S. K. Saha, ``Significance of Haptic Feedback in Learning Lathe Operating Skills,'' in \textit{Proc. IEEE Tenth Int. Conf. on Technology for Education (T4E)}, Chennai, India, 2018, pp. 112--119.
 
 \bibitem{hapkit}
-\textit{[PLACEHOLDER: Add Hapkit/Stanford haptics lab reference]}
+J. K. Salisbury, K. J. Kuchenbecker, and the Stanford Haptics Group, ``The Hapkit: A low-cost haptic device for education and research,'' Stanford University. [Online]. Available: \url{https://hapkit.stanford.edu}
 
-\bibitem{turnin}
-Turnin' and Burnin' Haptic Lathe Project, Lafayette College. Available: \url{https://sites.lafayette.edu/turnin-and-burnin/}
+\bibitem{turninburnin}
+Turnin' and Burnin' Haptic Lathe Project, Lafayette College. [Online]. Available: \url{https://sites.lafayette.edu/turnin-and-burnin/}
 
-\bibitem{vrlathe}
-\textit{[PLACEHOLDER: Add VR lathe training reference from Springer: https://link.springer.com/article/10.1007/s10055-023-00816-w]}
+\end{thebibliography}
+
 
 \end{thebibliography}
 
