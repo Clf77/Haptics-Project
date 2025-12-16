@@ -8,20 +8,24 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {I-B}}Educational Objectives}{1}{}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {I-C}}Prior Work in Haptic Machining Simulation}{1}{}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {II}System Overview}{2}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Haptic Lathe Simulator Setup}}{2}{}\protected@file@percent }
+\newlabel{fig:placeholder}{{1}{2}{}{figure.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Virtual Environment showing Delrin being cut.}}{2}{}\protected@file@percent }
+\newlabel{fig:gui}{{2}{2}{}{figure.2}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-A}}Project Scope}{2}{}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-B}}Virtual Wall Rendering}{2}{}\protected@file@percent }
 \newlabel{eq:spring_wall}{{1}{2}{}{equation.1}{}}
 \newlabel{eq:spring_damper}{{2}{2}{}{equation.2}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-C}}Cutting Force Modeling}{2}{}\protected@file@percent }
-\newlabel{eq:cutting_force}{{3}{2}{}{equation.3}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {III}System Architecture}{2}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Architecture Overview}{2}{}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces System architecture showing data flow between components.}}{2}{}\protected@file@percent }
-\newlabel{fig:architecture}{{1}{2}{}{figure.1}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Communication Protocol}{2}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Update Rates}{2}{}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces System timing parameters.}}{2}{}\protected@file@percent }
-\newlabel{tab:timing}{{I}{2}{}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-C}}Cutting Force Modeling}{3}{}\protected@file@percent }
+\newlabel{eq:cutting_force}{{3}{3}{}{equation.3}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {III}System Architecture}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Architecture Overview}{3}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces System architecture showing data flow between components.}}{3}{}\protected@file@percent }
+\newlabel{fig:architecture}{{3}{3}{}{figure.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Communication Protocol}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Update Rates}{3}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces System timing parameters.}}{3}{}\protected@file@percent }
+\newlabel{tab:timing}{{I}{3}{}{table.1}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {IV}Hardware Implementation}{3}{}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Component Selection}{3}{}\protected@file@percent }
 \@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces CQR37D Motor Specifications}}{3}{}\protected@file@percent }
@@ -33,47 +37,55 @@
 \@writefile{lot}{\contentsline {table}{\numberline {IV}{\ignorespaces Bill of materials (excluding 3D-printed parts).}}{3}{}\protected@file@percent }
 \newlabel{tab:bom}{{IV}{3}{}{table.4}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-D}}Mechanical Design}{3}{}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces CAD of the Lathe Simulator with transparent lid.}}{3}{}\protected@file@percent }
-\newlabel{fig:device}{{2}{3}{}{figure.2}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {V}Software Implementation}{3}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Motor Control (MicroPython)}{3}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-A}1}Quadrature Encoder Decoding}{3}{}\protected@file@percent }
-\newlabel{eq:position}{{4}{3}{}{equation.4}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-A}2}Velocity Calculation}{3}{}\protected@file@percent }
-\newlabel{eq:velocity}{{5}{3}{}{equation.5}{}}
-\newlabel{eq:velocity_filter}{{6}{3}{}{equation.6}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Virtual Wall Force Rendering}{3}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-B}1}Penetration Detection}{3}{}\protected@file@percent }
-\newlabel{eq:penetration}{{7}{3}{}{equation.7}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-B}2}Damping-Based Force Calculation}{3}{}\protected@file@percent }
-\newlabel{eq:damping_force}{{8}{3}{}{equation.8}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-B}3}Torque-to-PWM Conversion}{4}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces CAD of the Lathe Simulator with transparent lid.}}{4}{}\protected@file@percent }
+\newlabel{fig:device}{{4}{4}{}{figure.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {V}Software Implementation}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Motor Control (MicroPython)}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-A}1}Quadrature Encoder Decoding}{4}{}\protected@file@percent }
+\newlabel{eq:position}{{4}{4}{}{equation.4}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-A}2}Velocity Calculation}{4}{}\protected@file@percent }
+\newlabel{eq:velocity}{{5}{4}{}{equation.5}{}}
+\newlabel{eq:velocity_filter}{{6}{4}{}{equation.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Virtual Wall Force Rendering}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}Control Loop and Force Pipeline}{4}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Force rendering pipeline executed each Pico control cycle.}}{4}{}\protected@file@percent }
+\newlabel{fig:forcepipeline}{{5}{4}{}{figure.5}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-C}1}Parameterization Used in This Prototype}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-C}2}Penetration Detection}{4}{}\protected@file@percent }
+\newlabel{eq:penetration}{{7}{4}{}{equation.7}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-C}3}Damping-Based Force Calculation}{4}{}\protected@file@percent }
+\newlabel{eq:damping_force}{{8}{4}{}{equation.8}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-C}4}Torque-to-PWM Conversion}{4}{}\protected@file@percent }
 \newlabel{eq:motor_torque}{{9}{4}{}{equation.9}{}}
 \newlabel{eq:hapkit_duty}{{10}{4}{}{equation.10}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}Material Properties}{4}{}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {V}{\ignorespaces Material Haptic Properties}}{4}{}\protected@file@percent }
-\newlabel{tab:materials}{{V}{4}{}{table.5}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Graphical User Interface}{4}{}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Virtual Environment showing the lathe workspace.}}{4}{}\protected@file@percent }
-\newlabel{fig:gui}{{3}{4}{}{figure.3}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-D}1}Collision Detection}{4}{}\protected@file@percent }
-\newlabel{eq:hyperbolic_tool}{{11}{4}{}{equation.11}{}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-D}2}Vibration Frequency Calculation}{4}{}\protected@file@percent }
-\newlabel{eq:sfm}{{12}{4}{}{equation.12}{}}
-\newlabel{eq:vib_freq}{{13}{4}{}{equation.13}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-E}}Safety Features}{4}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {VI}Results}{4}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-A}}Design Decisions}{4}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-B}}Limitations}{4}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-C}}User Study}{4}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {VI-C}1}Participants}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {VI-C}2}Measures}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {VI-C}3}Results}{5}{}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {VI}{\ignorespaces User Study Results (n=10)}}{5}{}\protected@file@percent }
-\newlabel{tab:results}{{VI}{5}{}{table.6}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-D}}Discussion}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {VII}Future Work}{5}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {VIII}Conclusion}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Material Properties}{5}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {V}{\ignorespaces Material Haptic Properties}}{5}{}\protected@file@percent }
+\newlabel{tab:materials}{{V}{5}{}{table.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-E}}Graphical User Interface}{5}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Virtual Environment showing the lathe workspace.}}{5}{}\protected@file@percent }
+\newlabel{fig:gui}{{6}{5}{}{figure.6}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-E}1}Collision Detection}{5}{}\protected@file@percent }
+\newlabel{eq:hyperbolic_tool}{{11}{5}{}{equation.11}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {V-E}2}Vibration Frequency Calculation}{5}{}\protected@file@percent }
+\newlabel{eq:sfm}{{12}{5}{}{equation.12}{}}
+\newlabel{eq:vib_freq}{{13}{5}{}{equation.13}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Results}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-A}}Design Decisions}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-B}}Limitations}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-C}}User Study}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {VI-C}1}Procedure}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {VI-C}2}Participants}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {VI-C}3}Measures}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {VI-C}4}Results}{6}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {VI}{\ignorespaces User study Likert responses (1--10).}}{6}{}\protected@file@percent }
+\newlabel{tab:userstudy}{{VI}{6}{}{table.6}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {VII}{\ignorespaces User study means by experience group (Likert 1--10).}}{6}{}\protected@file@percent }
+\newlabel{tab:userstudy_groups}{{VII}{6}{}{table.7}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {VI-C}5}Qualitative Feedback}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {VI-C}6}Study Limitations}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {VI-D}}Discussion}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VII}Future Work}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VIII}Conclusion}{6}{}\protected@file@percent }
 \bibcite{he2006haptic}{1}
 \bibcite{ieee8590115}{2}
 \bibcite{sciencedirect2016}{3}
@@ -83,5 +95,5 @@
 \bibcite{ieeeT4E2018}{7}
 \bibcite{hapkit}{8}
 \bibcite{turninburnin}{9}
-\@writefile{toc}{\contentsline {section}{References}{6}{}\protected@file@percent }
-\gdef \@abspage@last{6}
+\@writefile{toc}{\contentsline {section}{References}{7}{}\protected@file@percent }
+\gdef \@abspage@last{7}
