@@ -151,10 +151,12 @@ The bridge sends text commands to the Pico microcontroller via serial at 921600 
 
 \subsection{Update Rates}
 
+Table~\ref{tab:timing} shows the system update rates to ensure responsive haptic feedback.
+
 \begin{table}[htbp]
 \caption{System timing parameters.}
 \begin{center}
-\begin{tabular}{lcc}
+\begin{tabular}{|l|c|l|}
 \hline
 \textbf{Component} & \textbf{Rate} & \textbf{Purpose} \\
 \hline
@@ -169,14 +171,32 @@ Safety checks & 20 Hz & Timeouts, limits \\
 \end{center}
 \end{table}
 
-
 \section{Hardware Implementation}
 
 \subsection{Component Selection}
 
 The haptic interface requires a motor capable of sufficient torque for realistic cutting force simulation, low friction for transparent backdrivability, and integrated encoder for position sensing.
 
-We selected the \textbf{CQRobot CQR37D} geared DC motor with 30:1 gear ratio, 64 counts/revolution encoder (1920 effective counts/output revolution), 12V DC rated voltage, 150 RPM no-load speed, and 3.1 Nm stall torque. The 30:1 gear ratio provides mechanical advantage, amplifying motor torque while reducing output speed---appropriate for the slow, deliberate movements of lathe handwheel operation.
+We selected the \textbf{CQRobot CQR37D} geared DC motor. Table~\ref{tab:motor} shows its specifications. The 30:1 gear ratio provides mechanical advantage, amplifying motor torque while reducing output speed---appropriate for the slow, deliberate movements of lathe handwheel operation.
+
+\begin{table}[htbp]
+\caption{CQR37D Motor Specifications}
+\begin{center}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Parameter} & \textbf{Value} \\
+\hline
+Gear Ratio & 30:1 \\
+Encoder CPR & 64 counts/rev (motor shaft) \\
+Effective Resolution & 1920 counts/output rev \\
+Rated Voltage & 12V DC \\
+No-Load Speed & 150 RPM \\
+Stall Torque & 3.1 Nm \\
+\hline
+\end{tabular}
+\label{tab:motor}
+\end{center}
+\end{table}
 
 The \textbf{Raspberry Pi Pico} provides dual-core ARM Cortex-M0+ at 133 MHz, hardware PWM for motor control, GPIO interrupts for encoder counting, and MicroPython support for rapid development.
 
@@ -204,10 +224,12 @@ Motor IN2 & Pin 2 & GP1 & --- \\
 
 \subsection{Bill of Materials}
 
+Table~\ref{tab:bom} shows the complete bill of materials.
+
 \begin{table}[htbp]
 \caption{Bill of materials (excluding 3D-printed parts).}
 \begin{center}
-\begin{tabular}{lcc}
+\begin{tabular}{|l|c|r|}
 \hline
 \textbf{Item} & \textbf{Qty} & \textbf{Cost} \\
 \hline
@@ -222,7 +244,6 @@ Shaft coupler & 1 & \$4.50 \\
 \label{tab:bom}
 \end{center}
 \end{table}
-
 
 \subsection{Mechanical Design}
 
@@ -388,7 +409,7 @@ Participants interacted freely with the simulator and were encouraged to explore
 
 \subsubsection{Participants}
 
-A total of ten participants completed the study. The group included users with prior lathe experience as well as complete novices: 8 participants reported prior experience operating a lathe, and 3 participants had no prior lathe experience. 
+A total of ten participants completed the study. The group included users with prior lathe experience as well as complete novices: 8 participants reported prior experience operating a lathe, and 3 participants had no prior lathe experience.
 
 This mix allowed us to capture feedback from both experienced users familiar with real machining and novices encountering lathe dynamics for the first time.
 
@@ -398,17 +419,31 @@ Participants rated their agreement with the following statements on a 10-point L
 
 \subsubsection{Results}
 
-Overall responses were strongly positive across all evaluation dimensions. Mean scores across participants: 
-\begin{itemize}
-    \item \textbf{Perceived realism}: Mean = 8.9 / 10
-    \item \textbf{Material differentiation}: Mean = 9.0 / 10
-    \item \textbf{Force communicating tool engagement}: Mean = 9.0 / 10
-    \item \textbf{Error detection through haptics}: Mean = 8.3 / 10
-    \item \textbf{Visual--haptic synchronization}: Mean = 9.9 / 10
-    \item \textbf{Understanding of cutting dynamics}: Mean = 9.8 / 10
-\end{itemize} All participants reported increased confidence in operating a lathe after using the simulator.
+Table~\ref{tab:results} summarizes the user study results. All participants reported increased confidence in operating a lathe after using the simulator.
 
-Qualitative feedback further reinforced these results. Participants frequently commented on the realism of the cutting feel and the clarity of force changes with depth of cut. Experienced users noted that the simulator closely matched their expectations of lathe behavior. Novice users reported that the haptic feedback helped them intuitively understand when a cut was too aggressive without relying solely on visual cues.
+\begin{table}[htbp]
+\caption{User Study Results (n=10)}
+\begin{center}
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Measure} & \textbf{Mean Score} \\
+\hline
+Perceived realism & 8.9 / 10 \\
+Material differentiation & 9.0 / 10 \\
+Force communicates engagement & 9.0 / 10 \\
+Error detection through haptics & 8.3 / 10 \\
+Visual--haptic synchronization & 9.9 / 10 \\
+Understanding of dynamics & 9.8 / 10 \\
+\hline
+\end{tabular}
+\label{tab:results}
+\end{center}
+\end{table}
+
+Qualitative feedback further reinforced these results. Participants frequently commented on the realism of the cutting feel and the clarity of force changes with depth of cut. Experienced users noted that the simulator closely matched their expectations of lathe behavior, particularly when engaging the tool or increasing cutting aggressiveness. Novice users reported that the haptic feedback helped them intuitively understand when a cut was too aggressive without relying solely on visual cues.
+
+Minor usability feedback focused on physical setup rather than haptic rendering. For example, one participant noted that suction cups used to secure the device occasionally distracted from immersion, suggesting opportunities for improved mechanical mounting in future iterations.
+
 
 \subsection{Discussion}
 
