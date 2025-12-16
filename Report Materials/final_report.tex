@@ -154,16 +154,17 @@ The bridge sends text commands to the Pico microcontroller via serial at 921600 
 Table~\ref{tab:timing} shows the system update rates to ensure responsive haptic feedback.
 
 \begin{table}[htbp]
-\caption{System Update Rates}
+\caption{System timing parameters.}
 \begin{center}
 \begin{tabular}{|l|c|l|}
 \hline
 \textbf{Component} & \textbf{Rate} & \textbf{Purpose} \\
 \hline
-Pico Control Loop & 100 Hz & Motor control, force rendering \\
-Bridge Main Loop & 500 Hz & Communication management \\
-GUI Frame Rate & 60 Hz & Visual rendering \\
-Safety Checks & 20 Hz & Limit monitoring \\
+Pico control loop & 100 Hz & Force rendering, motor control \\
+Bridge main loop & 500 Hz & Communication management \\
+GUI rendering & 60 Hz & Visualization \\
+Position polling & 100 Hz & Encoder/state feedback \\
+Safety checks & 20 Hz & Timeouts, limits \\
 \hline
 \end{tabular}
 \label{tab:timing}
@@ -226,17 +227,16 @@ Motor IN2 & Pin 2 & GP1 & --- \\
 Table~\ref{tab:bom} shows the complete bill of materials.
 
 \begin{table}[htbp]
-\caption{Bill of Materials}
+\caption{Bill of materials (excluding 3D-printed parts).}
 \begin{center}
 \begin{tabular}{|l|c|r|}
 \hline
 \textbf{Item} & \textbf{Qty} & \textbf{Cost} \\
 \hline
 Raspberry Pi Pico & 1 & \$4.00 \\
-CQR37D Motor (30:1) & 1 & \$34.00 \\
-Shaft Coupler & 1 & \$4.50 \\
-Motor Driver (H-Bridge) & 1 & \$15.70 \\
-3D Printed Parts & --- & --- \\
+CQR37D geared DC motor (30:1) & 1 & \$34.00 \\
+Motor driver (H-bridge) & 1 & \$15.70 \\
+Shaft coupler & 1 & \$4.50 \\
 \hline
 \textbf{Total} & & \textbf{\$58.20} \\
 \hline
@@ -409,7 +409,9 @@ Participants interacted freely with the simulator and were encouraged to explore
 
 \subsubsection{Participants}
 
-A total of ten participants completed the study. The group included users with prior lathe experience as well as complete novices: 8 participants reported prior experience operating a lathe, and 2 participants had no prior lathe experience. This mix allowed us to capture feedback from both experienced users familiar with real machining and novices encountering lathe dynamics for the first time.
+A total of ten participants completed the study. The group included users with prior lathe experience as well as complete novices: 8 participants reported prior experience operating a lathe, and 3 participants had no prior lathe experience.
+
+This mix allowed us to capture feedback from both experienced users familiar with real machining and novices encountering lathe dynamics for the first time.
 
 \subsubsection{Measures}
 
