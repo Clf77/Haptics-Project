@@ -583,4 +583,28 @@ Turnin' and Burnin' Haptic Lathe Project, Lafayette College. [Online]. Available
 
 \end{thebibliography}
 
+\section*{Appendix: File Descriptions}
+
+The following files are included for reproduction of this project:
+
+\begin{enumerate}
+    \item \texttt{run\_integrated\_system.py}: Main launcher script. \textbf{To start the system}, run \texttt{python run\_integrated\_system.py} from the project root. This starts the Python bridge and opens the Processing GUI.
+    
+    \item \texttt{integrated\_lathe\_controller.py}: Python bridge that manages TCP communication between the GUI and the Raspberry Pi Pico microcontroller. Computes haptic forces and relays commands.
+    
+    \item \texttt{pico\_upload/main.py}: Pico boot script that initializes the motor controller and listens for serial commands. \textbf{Upload this file to the Pico} along with \texttt{motor\_control.py}.
+    
+    \item \texttt{pico\_upload/motor\_control.py}: MicroPython firmware implementing quadrature encoder reading, PID position/velocity control, and damping-based virtual wall haptic rendering.
+    
+    \item \texttt{Haptic\_Lathe\_GUI/Haptic\_Lathe\_GUI\_Integrated.pde}: Processing sketch for the virtual lathe GUI. Renders stock geometry, tool position, and material removal in real-time; sends force commands to the Python bridge via TCP.
+    
+    \item \texttt{lathe\_config.ini}: Configuration file specifying serial port names and system parameters.
+    
+    \item \texttt{INTEGRATED\_SYSTEM\_README.md}: Comprehensive setup and usage guide for the integrated system.
+    
+    \item \texttt{UPLOAD\_INSTRUCTIONS.md}: Step-by-step instructions for uploading firmware to the Raspberry Pi Pico using Thonny or \texttt{mpremote}.
+    
+    \item \texttt{Report Materials/device.png}: CAD rendering of the haptic lathe device assembly.
+\end{enumerate}
+
 \end{document}
