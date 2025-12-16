@@ -1,22 +1,20 @@
-\documentclass[11pt,letterpaper]{article}
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
 
-% Packages
-\usepackage[margin=1in]{geometry}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
 \usepackage{graphicx}
-\usepackage{amsmath}
-\usepackage{amssymb}
-\usepackage{booktabs}
-\usepackage{hyperref}
-\usepackage{listings}
+\usepackage{textcomp}
 \usepackage{xcolor}
-\usepackage{float}
-\usepackage{subcaption}
+\usepackage{listings}
 \usepackage{tikz}
+\usepackage{url}
 \usetikzlibrary{shapes,arrows,positioning}
 
 % Code listing style
 \lstset{
-    basicstyle=\ttfamily\small,
+    basicstyle=\ttfamily\footnotesize,
     breaklines=true,
     frame=single,
     numbers=left,
@@ -27,17 +25,19 @@
     showstringspaces=false
 }
 
-% Title information
-\title{\textbf{Haptic Lathe Simulator}\\
-\large MAE 6800: Design and Control of Haptic Systems\\
-Fall 2025}
-
-\author{Caleb Farrelly, Daria Kot, and Richard Zheng\\
-Cornell University}
-
-\date{\today}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 
 \begin{document}
+
+\title{Haptic Lathe Simulator\\
+{\large MAE 6800: Design and Control of Haptic Systems, Fall 2025}}
+
+\author{\IEEEauthorblockN{Caleb Farrelly, Daria Kot, and Richard Zheng}
+\IEEEauthorblockA{\textit{Sibley School of Mechanical and Aerospace Engineering} \\
+\textit{Cornell University}\\
+Ithaca, NY, USA}
+}
 
 \maketitle
 
@@ -45,16 +45,15 @@ Cornell University}
 We present the design and implementation of a haptic lathe training device that simulates the tactile experience of operating a manual lathe. The system integrates a directly-driven handwheel with a virtual lathe environment, providing force feedback based on tool-material interaction, spindle speed, and cutting depth. Using a geared DC motor with a quadrature encoder as the haptic interface and a Processing-based graphical user interface, the device enables trainees to develop muscle memory for common machining operations in a low-risk setting. The haptic rendering algorithm employs a damping-based virtual wall model derived from the Hapkit framework, with material-specific force profiles for Delrin, Aluminum 6061, Stainless Steel 316, and Inconel. This paper details the system architecture, hardware implementation, control algorithms, and force rendering equations.
 \end{abstract}
 
-\tableofcontents
-\newpage
+\begin{IEEEkeywords}
+haptics, lathe simulator, force feedback, virtual machining, training systems
+\end{IEEEkeywords}
 
-%==============================================================================
 \section{Introduction}
-%==============================================================================
 
 \subsection{Motivation}
 
-Traditional lathe training relies on access to full-scale machines and close expert supervision, and it carries inherent risks including injury, tool damage, and material waste. Novice machinists must develop the tactile “feel” of cutting—recognizing overly aggressive feeds, dull tools, chatter onset, and material-dependent behavior at the tool–workpiece interface. Developing this intuition typically requires extensive hands-on practice.
+Traditional lathe training relies on access to full-scale machines and close expert supervision, and it carries inherent risks including injury, tool damage, and material waste. Novice machinists must develop the tactile ``feel'' of cutting---recognizing overly aggressive feeds, dull tools, chatter onset, and material-dependent behavior at the tool--workpiece interface. Developing this intuition typically requires extensive hands-on practice.
 
 Haptic technology offers a safer and more accessible alternative: virtual training environments that provide force feedback without the cost or hazard of physical machining. We present a two-DOF haptic lathe simulator that reproduces the hand-feel of manual lathe operation using a directly driven handwheel that can be toggled between the X cross-slide and Z carriage axes. A virtual lathe environment renders stock geometry, tool position, target drawings, and tolerances, and live X/Z readouts. The system computes and reflects cutting forces and torques as functions of spindle speed, feed, and depth of cut, enabling trainees to practice core operations such as facing and turning to diameter while building correct muscle memory in a low-risk setting.
 
@@ -64,11 +63,8 @@ The Haptic Lathe Simulator is designed to achieve the following educational obje
 
 \begin{enumerate}
     \item \textbf{Muscle Memory Development}: Users develop proper hand coordination for feed control by experiencing realistic resistance during cutting operations.
-
     \item \textbf{Material Differentiation}: Different materials (Delrin, Aluminum, Stainless Steel, Inconel) present distinct force profiles, teaching users to recognize and adapt to material properties.
-
     \item \textbf{Safety Awareness}: The system simulates crash conditions when the tool contacts the workpiece with the spindle stopped and provides increased haptic resistance for overly aggressive cutting attempts, reinforcing safe operating procedures and proper feed control.
-
     \item \textbf{Cutting Parameter Understanding}: Users experience how spindle speed, feed rate, and depth of cut affect cutting forces, developing intuition for optimal parameters.
 \end{enumerate}
 
@@ -78,93 +74,69 @@ A complementary user study by \cite{ieeeT4E2018} examined the perceived importan
 
 Significant prior work has explored force-feedback interfaces for virtual machining, with an emphasis on modeling tool--workpiece interaction and material removal in real time. Early systems such as the Haptic Virtual Turning Operation System (HVTOS) employed efficient workpiece deformation algorithms to generate continuous force feedback as a function of cutting depth and material properties \cite{he2006haptic}. However, force feedback in this work was rendered using a commercial PHANToM haptic device, which, while capable of high-fidelity kinesthetic output, is expensive and does not reflect the mechanical interaction of a manual lathe, where feedback is transmitted through a rotating handwheel.
 
-Subsequent research expanded virtual machining toward immersive visual and mixed-reality training platforms, emphasizing three-dimensional visualization, task sequencing, and safety instruction rather than physically rendered cutting forces \cite{ieee8590115, sciencedirect2016, springer2023vr}. In many of these systems, user interaction is limited to kinematic input—such as rotating a handwheel or manipulating a virtual tool—without explicit force or torque feedback. As a result, training is driven primarily by visual cues and procedural guidance, with limited representation of the kinesthetic sensations inherent to real machining. Educational implementations such as the \textit{Turnin’ and Burnin’} lathe similarly focus on visual understanding of machining operations and geometry while omitting continuous, physically meaningful haptic feedback through the handwheel \cite{turninburnin}.
+Subsequent research expanded virtual machining toward immersive visual and mixed-reality training platforms, emphasizing three-dimensional visualization, task sequencing, and safety instruction rather than physically rendered cutting forces \cite{ieee8590115, sciencedirect2016, springer2023vr}. In many of these systems, user interaction is limited to kinematic input---such as rotating a handwheel or manipulating a virtual tool---without explicit force or torque feedback. Educational implementations such as the \textit{Turnin' and Burnin'} lathe similarly focus on visual understanding of machining operations and geometry while omitting continuous, physically meaningful haptic feedback through the handwheel \cite{turninburnin}.
 
-In contrast, the haptic lathe simulator presented in this work emphasizes the continuous, parameter-dependent hand feel of manual lathe operation. By using a directly driven handwheel and a damping-based force rendering model explicitly tied to feed rate, spindle speed, depth of cut, and material properties, our system prioritizes kinesthetic realism and muscle-memory development. This approach targets the aspects of manual machining most critical during early skill acquisition and distinguishes our work from prior visually focused or device-centric haptic simulators.
+In contrast, the haptic lathe simulator presented in this work emphasizes the continuous, parameter-dependent hand feel of manual lathe operation. By using a directly driven handwheel and a damping-based force rendering model explicitly tied to feed rate, spindle speed, depth of cut, and material properties, our system prioritizes kinesthetic realism and muscle-memory development.
 
-
-\section {System Overview}
+\section{System Overview}
 
 The haptic lathe simulator consists of three primary subsystems:
 
 \begin{enumerate}
     \item \textbf{Haptic Interface}: A CQR37D geared DC motor with integral quadrature encoder, directly coupled to a handwheel that serves as both position input and force feedback output.
-
     \item \textbf{Virtual Environment}: A Processing-based graphical user interface that renders the lathe workpiece, tool position, and material removal in real-time.
-
     \item \textbf{Control Bridge}: A Python-based communication layer that manages bidirectional data flow between the GUI and microcontroller while computing haptic forces.
 \end{enumerate}
 
+\subsection{Project Scope}
 
-
-\subsection{Project Scope 
-}
-The presented work demonstrates the principles of machining with real-time force feedback to replicate the two primary control inputs of a conventional manual lathe: the X cross-slide and the Z carriage. The resultant device is a two-DOF haptic trainer featuring one directly-driven handwheel to ensure high-fidelity transmission of simulated forces, with the operator being able to rapidly switch between the two axis. By concentrating the design on a low-inertia, directly-coupled system, the device minimizes parasitic friction and backlash, which are critical design considerations in high-precision mechanical assemblies. The system computes and reflects realistic cutting forces and torques based on operational variables, allowing trainees to practice basic machining operations (e.g., facing, turning to a specified diameter) in a safe virtual environment. 
-
-
-
-
+The presented work demonstrates the principles of machining with real-time force feedback to replicate the two primary control inputs of a conventional manual lathe: the X cross-slide and the Z carriage. The resultant device is a two-DOF haptic trainer featuring one directly-driven handwheel to ensure high-fidelity transmission of simulated forces, with the operator being able to rapidly switch between the two axes. By concentrating the design on a low-inertia, directly-coupled system, the device minimizes parasitic friction and backlash, which are critical design considerations in high-precision mechanical assemblies. The system computes and reflects realistic cutting forces and torques based on operational variables, allowing trainees to practice basic machining operations (e.g., facing, turning to a specified diameter) in a safe virtual environment.
 
 \subsection{Virtual Wall Rendering}
 
 Virtual walls are fundamental haptic primitives that create the sensation of solid surfaces. When a user penetrates a virtual wall, the haptic device generates a restoring force proportional to penetration depth:
-
 \begin{equation}
     F = k \cdot x
     \label{eq:spring_wall}
 \end{equation}
-
 where $k$ is the wall stiffness (N/m) and $x$ is the penetration depth (m). Pure spring walls can feel ``buzzy'' at high stiffness values, motivating the addition of damping:
-
 \begin{equation}
     F = k \cdot x + b \cdot \dot{x}
     \label{eq:spring_damper}
 \end{equation}
-
 where $b$ is the damping coefficient (Ns/m) and $\dot{x}$ is the penetration velocity (m/s).
 
 \subsection{Cutting Force Modeling}
 
 In actual machining, the feed force experienced by the lathe's feed mechanism is given by:
-
 \begin{equation}
     F_f = K_c \cdot f \cdot a_p
     \label{eq:cutting_force}
 \end{equation}
+where $K_c$ is the specific cutting force of the workpiece material (N/mm$^2$), $f$ is the feed per revolution (mm/rev), and $a_p$ is the depth of cut (mm). This relationship guides our haptic rendering strategy: cutting forces should increase with feed rate (velocity) and depth of cut (penetration).
 
-where:
-\begin{itemize}
-    \item $K_c$ = Specific cutting force of the workpiece material (N/mm$^2$)
-    \item $f$ = Feed per revolution (mm/rev)
-    \item $a_p$ = Depth of cut (mm)
-\end{itemize}
-
-This relationship guides our haptic rendering strategy: cutting forces should increase with feed rate (velocity) and depth of cut (penetration).
-
-%==============================================================================
 \section{System Architecture}
-%==============================================================================
 
 \subsection{Architecture Overview}
 
-The system employs a three-tier architecture with clear separation of concerns:
+The system employs a three-tier architecture with clear separation of concerns. Fig.~\ref{fig:architecture} shows the data flow between components.
 
-\begin{figure}[H]
+\begin{figure}[htbp]
 \centering
 \begin{tikzpicture}[
-    node distance=2cm,
-    block/.style={rectangle, draw, fill=blue!20, text width=3cm, text centered, minimum height=1.5cm},
+    node distance=1.5cm,
+    block/.style={rectangle, draw, fill=blue!20, text width=2.2cm, text centered, minimum height=1.2cm, font=\footnotesize},
     arrow/.style={->, thick}
 ]
-    \node[block] (gui) {Processing GUI\\(Visual Rendering)};
-    \node[block, right=of gui] (bridge) {Python Bridge\\(Communication)};
-    \node[block, right=of bridge] (pico) {Raspberry Pi Pico\\(Motor Control)};
-    \node[block, below=of pico] (motor) {CQR37D Motor\\+ Encoder};
+    \node[block] (gui) {Processing GUI\\(Visual)};
+    \node[block, right=of gui] (bridge) {Python Bridge\\(Comm.)};
+    \node[block, right=of bridge] (pico) {RPi Pico\\(Control)};
+    \node[block, below=of pico] (motor) {CQR37D\\Motor};
 
-    \draw[arrow] (gui) -- node[above] {TCP/IP} (bridge);
-    \draw[arrow] (bridge) -- node[above] {Serial} (pico);
+    \draw[arrow] (gui) -- node[above, font=\scriptsize] {TCP/IP} (bridge);
+    \draw[arrow] (bridge) -- node[above, font=\scriptsize] {Serial} (pico);
     \draw[arrow] (pico) -- (motor);
-    \draw[arrow] (motor.west) -- ++(-1,0) |- node[left, near start] {Position} (bridge.south);
+    \draw[arrow] (motor.west) -- ++(-0.8,0) |- node[left, near start, font=\scriptsize] {Position} (bridge.south);
 
 \end{tikzpicture}
 \caption{System architecture showing data flow between components.}
@@ -173,168 +145,61 @@ The system employs a three-tier architecture with clear separation of concerns:
 
 \subsection{Communication Protocol}
 
-\subsubsection{GUI to Bridge (TCP/IP, Port 5005)}
+The Processing GUI sends JSON-formatted commands to the Python bridge via TCP/IP on port 5005. High-speed force commands are sent at 100Hz using the format: \texttt{FORCE:<Fx>,<Fz>,<Freq>,<Yield>}.
 
-The Processing GUI sends JSON-formatted commands to the Python bridge:
-
-\begin{lstlisting}[language=Python]
-# High-speed force command (100Hz)
-FORCE:<Fx>,<Fz>,<Freq>,<Yield>
-# Example: FORCE:25.50,0.00,120.5,50.0
-
-# Axis selection
-{"type":"axis_select","axis":"Z"}
-
-# Zero position
-{"type":"zero_position","axis":"x"}
-\end{lstlisting}
-
-\subsubsection{Bridge to Pico (Serial, 921600 baud)}
-
-The bridge sends text commands to the microcontroller:
-
-\begin{lstlisting}
-spring_wall <force_N> <direction_flag> <freq_Hz> <yield_N>
-status
-stop
-zero
-\end{lstlisting}
+The bridge sends text commands to the Pico microcontroller via serial at 921600 baud, including commands such as \texttt{spring\_wall}, \texttt{status}, \texttt{stop}, and \texttt{zero}.
 
 \subsection{Update Rates}
 
-The system maintains the following update rates to ensure responsive haptic feedback:
+The system maintains the following update rates: Pico control loop at 100 Hz for motor control and force rendering; bridge main loop at 500 Hz for communication management; GUI frame rate at 60 Hz for visual rendering; and safety checks at 20 Hz for limit monitoring.
 
-\begin{table}[H]
-\centering
-\caption{System timing parameters.}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Component} & \textbf{Update Rate} & \textbf{Purpose} \\
-\midrule
-Pico Control Loop & 100 Hz & Motor control, force rendering \\
-Bridge Main Loop & 500 Hz & Communication management \\
-GUI Frame Rate & 60 Hz & Visual rendering \\
-Pico Polling & 100 Hz & Position feedback \\
-Safety Checks & 20 Hz & Limit monitoring \\
-\bottomrule
-\end{tabular}
-\label{tab:timing}
-\end{table}
-
-%==============================================================================
 \section{Hardware Implementation}
-%==============================================================================
 
 \subsection{Component Selection}
 
-\subsubsection{Motor Selection}
+The haptic interface requires a motor capable of sufficient torque for realistic cutting force simulation, low friction for transparent backdrivability, and integrated encoder for position sensing.
 
-The haptic interface requires a motor capable of:
-\begin{itemize}
-    \item Sufficient torque for realistic cutting force simulation
-    \item Low friction for transparent backdrivability
-    \item Integrated encoder for position sensing
-\end{itemize}
+We selected the \textbf{CQRobot CQR37D} geared DC motor with 30:1 gear ratio, 64 counts/revolution encoder (1920 effective counts/output revolution), 12V DC rated voltage, 150 RPM no-load speed, and 3.1 Nm stall torque. The 30:1 gear ratio provides mechanical advantage, amplifying motor torque while reducing output speed---appropriate for the slow, deliberate movements of lathe handwheel operation.
 
-We selected the \textbf{CQRobot CQR37D} geared DC motor with the following specifications:
-
-\begin{table}[H]
-\centering
-\caption{CQR37D motor specifications.}
-\begin{tabular}{ll}
-\toprule
-\textbf{Parameter} & \textbf{Value} \\
-\midrule
-Gear Ratio & 30:1 \\
-Encoder CPR (motor shaft) & 64 counts/revolution \\
-Effective Resolution & 1920 counts/output revolution \\
-Rated Voltage & 12V DC \\
-No-Load Speed & 150 RPM \\
-Stall Torque & 3.1 Nm \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The 30:1 gear ratio provides mechanical advantage, amplifying motor torque while reducing output speed---appropriate for the slow, deliberate movements of lathe handwheel operation.
-
-\subsubsection{Microcontroller}
-
-The \textbf{Raspberry Pi Pico} provides:
-\begin{itemize}
-    \item Dual-core ARM Cortex-M0+ at 133 MHz
-    \item Hardware PWM for motor control
-    \item GPIO interrupts for encoder counting
-    \item MicroPython support for rapid development
-\end{itemize}
-
-\subsubsection{Motor Driver}
-
-The motor driver (H-bridge) supports:
-\begin{itemize}
-    \item PWM speed control via ENA pin
-    \item Bidirectional control via IN1/IN2 pins
-    \item Symmetric coast mode (IN1=IN2=HIGH) for free spinning
-\end{itemize}
+The \textbf{Raspberry Pi Pico} provides dual-core ARM Cortex-M0+ at 133 MHz, hardware PWM for motor control, GPIO interrupts for encoder counting, and MicroPython support for rapid development.
 
 \subsection{Wiring Configuration}
 
-\begin{table}[H]
-\centering
-\caption{Hardware pin connections.}
-\begin{tabular}{llll}
-\toprule
-\textbf{Component} & \textbf{Pico Pin} & \textbf{GPIO} & \textbf{Wire Color} \\
-\midrule
+Table~\ref{tab:wiring} shows the hardware pin connections.
+
+\begin{table}[htbp]
+\caption{Hardware Pin Connections}
+\begin{center}
+\begin{tabular}{|l|l|l|l|}
+\hline
+\textbf{Component} & \textbf{Pico Pin} & \textbf{GPIO} & \textbf{Color} \\
+\hline
 Encoder A & Pin 9 & GP6 & White \\
 Encoder B & Pin 10 & GP7 & Yellow \\
-Motor ENA (PWM) & Pin 1 & GP0 & --- \\
+Motor ENA & Pin 1 & GP0 & --- \\
 Motor IN1 & Pin 4 & GP2 & --- \\
 Motor IN2 & Pin 2 & GP1 & --- \\
-\bottomrule
+\hline
 \end{tabular}
+\label{tab:wiring}
+\end{center}
 \end{table}
 
 \subsection{Bill of Materials}
 
-\begin{table}[H]
-\centering
-\caption{Complete bill of materials.}
-\begin{tabular}{lcr}
-\toprule
-\textbf{Item} & \textbf{Quantity} & \textbf{Cost} \\
-\midrule
-Raspberry Pi Pico & 1 & \$4.00 \\
-CQR37D Geared Motor (30:1) & 1 & \$34.00 \\
-Shaft Coupler & 1 & \$4.50 \\
-Motor Driver (H-Bridge) & 1 & \$15.70 \\
-3D Printed Housing & 1 & --- \\
-3D Printed Handwheel & 1 & --- \\
-\midrule
-\textbf{Total} & & \textbf{\$58.20} \\
-\bottomrule
-\end{tabular}
-\end{table}
+The total hardware cost is \$58.20, comprising: Raspberry Pi Pico (\$4.00), CQR37D Geared Motor 30:1 (\$34.00), Shaft Coupler (\$4.50), Motor Driver H-Bridge (\$15.70), and 3D printed housing and handwheel (no additional cost).
 
 \subsection{Mechanical Design}
 
-% PLACEHOLDER: Insert CAD images here
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.75\linewidth]{device.png}
-    \caption{CAD of the Lathe Simulator with transparent lid}
-    \label{fig:Lathe Simulator}
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=0.85\columnwidth]{device.png}}
+\caption{CAD of the Lathe Simulator with transparent lid.}
+\label{fig:device}
 \end{figure}
-The mechanical assembly includes:
-\begin{itemize}
-    \item 3D-printed housing with integrated mounting for motor and boards
-    \item 3D-printed handwheel (90mm OD) with ergonomic grip
-    \item Shaft coupler connecting motor output to handwheel
-    \item Flanged base for suction cup attachment and can be clamped to the table
-\end{itemize}
 
-%==============================================================================
+The mechanical assembly (Fig.~\ref{fig:device}) includes: 3D-printed housing with integrated mounting for motor and boards, 3D-printed handwheel (90mm OD) with ergonomic grip, shaft coupler connecting motor output to handwheel, and flanged base for suction cup attachment that can be clamped to the table.
+
 \section{Software Implementation}
-%==============================================================================
 
 \subsection{Motor Control (MicroPython)}
 
@@ -342,42 +207,23 @@ The motor controller runs on the Raspberry Pi Pico, implementing real-time posit
 
 \subsubsection{Quadrature Encoder Decoding}
 
-The encoder uses hardware interrupts to track motor position:
-
-\begin{lstlisting}[language=Python]
-def encoder_callback(self, pin):
-    a_state = self.encoder_a.value()
-    b_state = self.encoder_b.value()
-
-    if a_state != self.last_a_state:
-        if a_state == b_state:
-            self.encoder_count += 1   # Forward
-        else:
-            self.encoder_count -= 1   # Reverse
-
-    self.last_a_state = a_state
-\end{lstlisting}
-
-Position in degrees is computed as:
-
+The encoder uses hardware interrupts to track motor position. Position in degrees is computed as:
 \begin{equation}
     \theta = \frac{\text{encoder\_count}}{\text{CPR} \times \text{gear\_ratio}} \times 360^\circ
     \label{eq:position}
 \end{equation}
 
-For our system: $\theta = \frac{\text{count}}{64 \times 30} \times 360^\circ = \frac{\text{count}}{1920} \times 360^\circ$
+For our system: $\theta = \frac{\text{count}}{64 \times 30} \times 360^\circ = \frac{\text{count}}{1920} \times 360^\circ$.
 
 \subsubsection{Velocity Calculation}
 
 Angular velocity is computed by differentiating encoder counts:
-
 \begin{equation}
     \omega = \frac{\Delta\text{count}}{\text{CPR} \times \text{gear\_ratio}} \times \frac{60}{\Delta t} \quad \text{[RPM]}
     \label{eq:velocity}
 \end{equation}
 
 An IIR low-pass filter smooths the velocity estimate:
-
 \begin{equation}
     \dot{x}_{\text{filt}} = 0.9 \cdot \dot{x} + 0.1 \cdot \dot{x}_{\text{prev}}
     \label{eq:velocity_filter}
@@ -390,40 +236,28 @@ The haptic feedback algorithm implements a damping-based cutting force model ins
 \subsubsection{Penetration Detection}
 
 When the tool enters the workpiece, penetration depth is computed:
-
 \begin{equation}
-    x_{\text{pen}} = (\theta_{\text{current}} - \theta_{\text{wall}}) \cdot \text{wall\_direction} \cdot \frac{\pi}{180} \cdot r_h
+    x_{\text{pen}} = (\theta_{\text{current}} - \theta_{\text{wall}}) \cdot \text{dir} \cdot \frac{\pi}{180} \cdot r_h
     \label{eq:penetration}
 \end{equation}
-
 where $r_h = 0.05$ m is the effective handle radius.
 
 \subsubsection{Damping-Based Force Calculation}
 
 The cutting force is computed using velocity-proportional damping, scaled by penetration depth:
-
 \begin{equation}
     F = -\dot{x}_{\text{filt}} \cdot c_{\text{damping}} \cdot (1 + d_{\text{scale}})
     \label{eq:damping_force}
 \end{equation}
+where $\dot{x}_{\text{filt}}$ is the filtered velocity at handle (m/s), $c_{\text{damping}} = c_{\text{base}} \times \frac{F_{\text{wall}}}{50}$ is the material-scaled damping with $c_{\text{base}} = 2000$ Ns/m, and $d_{\text{scale}} = \min\left(\frac{x_{\text{pen}}}{0.005}, 2.0\right)$ is the depth scaling factor.
 
-where:
-\begin{itemize}
-    \item $\dot{x}_{\text{filt}}$ = Filtered velocity at handle (m/s)
-    \item $c_{\text{damping}} = c_{\text{base}} \times \frac{F_{\text{wall}}}{50}$ = Material-scaled damping
-    \item $c_{\text{base}} = 2000$ Ns/m (base damping coefficient)
-    \item $d_{\text{scale}} = \min\left(\frac{x_{\text{pen}}}{0.005}, 2.0\right)$ = Depth scaling factor
-\end{itemize}
-
-\subsubsection{Torque-to-PWM Conversion (Hapkit Algorithm)}
+\subsubsection{Torque-to-PWM Conversion}
 
 The computed force is converted to motor torque and then to PWM duty cycle using the Hapkit non-linear mapping:
-
 \begin{equation}
     T_p = \frac{F \cdot r_h}{\text{gear\_ratio}}
     \label{eq:motor_torque}
 \end{equation}
-
 \begin{equation}
     \text{duty} = \sqrt{\frac{|T_p|}{0.03}}
     \label{eq:hapkit_duty}
@@ -433,71 +267,53 @@ This square-root relationship linearizes the perceived force output.
 
 \subsection{Material Properties}
 
-Different materials are simulated by varying the wall stiffness $k_{\text{wall}}$ and yield force:
+Different materials are simulated by varying the wall stiffness $k_{\text{wall}}$ and yield force. Table~\ref{tab:materials} shows the material haptic properties.
 
-\begin{table}[H]
-\centering
-\caption{Material haptic properties.}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Material} & \textbf{$k_{\text{wall}}$ (N/m)} & \textbf{Yield Force (N)} & \textbf{Color} \\
-\midrule
+\begin{table}[htbp]
+\caption{Material Haptic Properties}
+\begin{center}
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Material} & \textbf{$k_{\text{wall}}$ (N/m)} & \textbf{Yield (N)} & \textbf{Color} \\
+\hline
 Delrin & 50,000 & 25 & Cream \\
-Aluminum 6061 & 100,000 & 50 & Silver \\
-Stainless Steel 316 & 150,000 & 75 & Dark Steel \\
+Al 6061 & 100,000 & 50 & Silver \\
+SS316 & 150,000 & 75 & Steel \\
 Inconel & 200,000 & 100 & Bronze \\
-\bottomrule
+\hline
 \end{tabular}
+\label{tab:materials}
+\end{center}
 \end{table}
 
 The 4:1 ratio between softest (Delrin) and hardest (Inconel) materials provides clear tactile differentiation.
 
-
-
-
 \subsection{Graphical User Interface}
-The Processing-based GUI provides:
 
-\begin{enumerate}
-    \item \textbf{Virtual Lathe Workspace}: Real-time rendering of stock geometry, tool position, and material removal
-    \item \textbf{Live Readouts}: X/Z position, tool load, cutting parameters
-    \item \textbf{Control Panel}: Material selection, axis selection, reset/zero functions
-    \item \textbf{Connection Status}: Visual indicator for bridge connectivity
-\end{enumerate}
-\begin{figure}
-    \centering
-    \includegraphics[width=1.0\linewidth]{image.png}
-    \caption{Virtual Environment}
-    \label{fig:placeholder}
+The Processing-based GUI provides: (1) Virtual Lathe Workspace with real-time rendering of stock geometry, tool position, and material removal; (2) Live Readouts of X/Z position, tool load, and cutting parameters; (3) Control Panel for material selection, axis selection, and reset/zero functions; and (4) Connection Status with visual indicator for bridge connectivity.
+
+\begin{figure}[htbp]
+\centerline{\includegraphics[width=\columnwidth]{image.png}}
+\caption{Virtual Environment showing the lathe workspace.}
+\label{fig:gui}
 \end{figure}
 
 \subsubsection{Collision Detection}
 
 The tool uses a hyperbolic profile for realistic V-tool geometry:
-
 \begin{equation}
     y = \sqrt{(s \cdot x)^2 + R^2} - R
     \label{eq:hyperbolic_tool}
 \end{equation}
-
-where $s$ is the slope factor and $R$ is the tool tip radius.
-
-Collision is detected when the tool profile intersects the stock profile array at any Z-position:
-
-\begin{equation}
-    \text{collision} = \left( r_{\text{tool}}(z) < r_{\text{stock}}(z) \right)
-    \label{eq:collision}
-\end{equation}
+where $s$ is the slope factor and $R$ is the tool tip radius. Collision is detected when the tool profile intersects the stock profile array at any Z-position.
 
 \subsubsection{Vibration Frequency Calculation}
 
 Cutting vibration frequency is mapped from surface feet per minute (SFM):
-
 \begin{equation}
     \text{SFM} = \frac{\text{RPM} \times D \times \pi}{12}
     \label{eq:sfm}
 \end{equation}
-
 \begin{equation}
     f_{\text{vib}} = \text{SFM} \quad \text{[Hz]}
     \label{eq:vib_freq}
@@ -505,33 +321,11 @@ Cutting vibration frequency is mapped from surface feet per minute (SFM):
 
 This 1:1 mapping (10 SFM = 10 Hz) provides intuitive correspondence between spindle speed and haptic vibration.
 
-\subsubsection{Material Removal}
-
-When the spindle is running (RPM > 0) and the tool is engaged:
-
-\begin{lstlisting}[language=Java]
-if (spindleRPM > 0 && penetration > yieldBuffer) {
-    stockProfile[z] = min(stockProfile[z], toolRadius + yieldBuffer);
-}
-\end{lstlisting}
-
-The yield buffer (1 pixel) prevents instantaneous material removal, providing a realistic ``cutting feel.''
-
 \subsection{Safety Features}
 
-The system implements multiple safety layers:
+The system implements multiple safety layers: Emergency Stop (spacebar triggers immediate motor stop), Symmetric Coast Mode (both H-bridge inputs HIGH for free spin), Position Limits (maximum penetration of 200$^\circ$ prevents pass-through), Heartbeat Monitoring (5-second timeout triggers safety stop), and Crash Detection (tool contact at 0 RPM triggers visual crash overlay).
 
-\begin{enumerate}
-    \item \textbf{Emergency Stop}: Spacebar triggers immediate motor stop
-    \item \textbf{Symmetric Coast Mode}: Both H-bridge inputs HIGH for free spin (no regenerative braking)
-    \item \textbf{Position Limits}: Maximum penetration of 200° prevents pass-through
-    \item \textbf{Heartbeat Monitoring}: 5-second timeout triggers safety stop
-    \item \textbf{Crash Detection}: Tool contact at 0 RPM triggers visual crash overlay
-\end{enumerate}
-
-%==============================================================================
 \section{Results}
-%==============================================================================
 
 \subsection{Design Decisions}
 
@@ -539,9 +333,7 @@ Several key design decisions shaped the final system:
 
 \begin{enumerate}
     \item \textbf{Damping-based vs. Spring-based Force Rendering}: We chose velocity-proportional damping over pure spring walls because cutting forces in actual machining are primarily determined by feed rate (velocity) rather than static position. This produces a more realistic ``cutting feel.''
-
     \item \textbf{Single-Axis Interface}: While a complete lathe has two axes (X and Z), we implemented a single handwheel with software axis selection. This reduces hardware complexity while maintaining training value through the axis toggle feature.
-
     \item \textbf{Motor as Input and Output}: Using the motor encoder as the position input (rather than a separate sensor) enables the same device to serve as both input transducer and force actuator.
 \end{enumerate}
 
@@ -549,62 +341,29 @@ Several key design decisions shaped the final system:
 
 \begin{enumerate}
     \item \textbf{Single Degree of Freedom}: Real lathe operation involves simultaneous X and Z control. The single-axis interface requires users to mentally switch between axes.
-
     \item \textbf{No Force Sensing}: The system renders forces based on virtual geometry only; actual cutting force measurement would require additional sensors.
-
     \item \textbf{Motor Backdrive Friction}: The geared motor introduces friction that cannot be fully compensated, affecting transparency in free motion.
-
 \end{enumerate}
 
-\subsection{User Study
-}
-A formative user study was conducted during a public demonstration of the haptic lathe simulator to evaluate perceived realism, effectiveness of haptic feedback, and its impact on users’ understanding of lathe cutting dynamics. The study was intended as an exploratory assessment rather than a controlled experiment, focusing on qualitative and subjective user feedback.
+\subsection{User Study}
+
+A formative user study was conducted during a public demonstration of the haptic lathe simulator to evaluate perceived realism, effectiveness of haptic feedback, and its impact on users' understanding of lathe cutting dynamics. The study was intended as an exploratory assessment rather than a controlled experiment, focusing on qualitative and subjective user feedback.
 
 Participants interacted freely with the simulator and were encouraged to explore different materials, cutting depths, and operating conditions. After completing the interaction, participants completed a short questionnaire consisting of Likert-scale statements (1--10) and open-ended feedback.
 
-\subsection{Participants}
+\subsubsection{Participants}
 
-A total of ten participants completed the study. The group included users with prior lathe experience as well as complete novices:
-\begin{itemize}
-    \item 8 participants reported prior experience operating a lathe
-    \item 3 participants had no prior lathe experience
-\end{itemize}
+A total of ten participants completed the study. The group included users with prior lathe experience as well as complete novices: 8 participants reported prior experience operating a lathe, and 3 participants had no prior lathe experience. This mix allowed us to capture feedback from both experienced users familiar with real machining and novices encountering lathe dynamics for the first time.
 
-This mix allowed us to capture feedback from both experienced users familiar with real machining and novices encountering lathe dynamics for the first time.
+\subsubsection{Measures}
 
-\subsection{Measures}
+Participants rated their agreement with the following statements on a 10-point Likert scale (1 = strongly disagree, 10 = strongly agree): The simulation was realistic; The materials were differentiable from one another; Force changes communicated tool engagement; I could tell when I was doing something ``wrong'' based on feel alone; The visual and haptic cues were synchronized; The simulator helped me understand lathe cutting dynamics. Participants were also asked whether they felt more confident operating a lathe after using the simulator (Yes/No).
 
-Participants rated their agreement with the following statements on a 10-point Likert scale (1 = strongly disagree, 10 = strongly agree):
+\subsubsection{Results}
 
-\begin{itemize}
-    \item The simulation was realistic.
-    \item The materials were differentiable from one another.
-    \item Force changes communicated tool engagement.
-    \item I could tell when I was doing something ``wrong'' based on feel alone.
-    \item The visual and haptic cues were synchronized.
-    \item The simulator helped me understand lathe cutting dynamics.
-\end{itemize}
+Overall responses were strongly positive across all evaluation dimensions. Mean scores across participants: Perceived realism: 8.9/10; Material differentiation: 9.0/10; Force communicating tool engagement: 9.0/10; Error detection through haptics: 8.3/10; Visual--haptic synchronization: 9.9/10; Understanding of cutting dynamics: 9.8/10. All participants reported increased confidence in operating a lathe after using the simulator.
 
-Participants were also asked whether they felt more confident operating a lathe after using the simulator (Yes/No) and were invited to provide open-ended comments.
-
-\subsection{Results}
-
-Overall responses were strongly positive across all evaluation dimensions. Mean scores across participants are summarized below:
-
-\begin{itemize}
-    \item \textbf{Perceived realism}: Mean = 8.9 / 10
-    \item \textbf{Material differentiation}: Mean = 9.0 / 10
-    \item \textbf{Force communicating tool engagement}: Mean = 9.0 / 10
-    \item \textbf{Error detection through haptics}: Mean = 8.3 / 10
-    \item \textbf{Visual--haptic synchronization}: Mean = 9.9 / 10
-    \item \textbf{Understanding of cutting dynamics}: Mean = 9.8 / 10
-\end{itemize}
-
-All participants reported increased confidence in operating a lathe after using the simulator.
-
-Qualitative feedback further reinforced these results. Participants frequently commented on the realism of the cutting feel and the clarity of force changes with depth of cut. Experienced users noted that the simulator closely matched their expectations of lathe behavior, particularly when engaging the tool or increasing cutting aggressiveness. Novice users reported that the haptic feedback helped them intuitively understand when a cut was too aggressive without relying solely on visual cues.
-
-Minor usability feedback focused on physical setup rather than haptic rendering. For example, one participant noted that suction cups used to secure the device occasionally distracted from immersion, suggesting opportunities for improved mechanical mounting in future iterations.
+Qualitative feedback further reinforced these results. Participants frequently commented on the realism of the cutting feel and the clarity of force changes with depth of cut. Experienced users noted that the simulator closely matched their expectations of lathe behavior. Novice users reported that the haptic feedback helped them intuitively understand when a cut was too aggressive without relying solely on visual cues.
 
 \subsection{Discussion}
 
@@ -612,58 +371,31 @@ The results suggest that the simulator successfully conveys key aspects of manua
 
 Importantly, both experienced and novice users reported benefits, supporting the hypothesis that physically meaningful handwheel feedback can aid early skill acquisition while remaining recognizable to expert operators. While the small sample size limits statistical generalization, these findings align with prior work emphasizing the role of haptics in motor-skill learning and motivate further controlled studies with larger participant groups.
 
-
-
-%==============================================================================
 \section{Future Work}
-%==============================================================================
 
 \begin{enumerate}
     \item \textbf{Two-Axis Implementation}: Add a second motor/handwheel for simultaneous X and Z control.
-
     \item \textbf{Force Sensing}: Integrate torque sensors for closed-loop force control.
-
     \item \textbf{Milling Mode}: The architecture extends naturally to milling simulation as a stretch goal.
-
     \item \textbf{Extended User Study}: Conduct a formal study comparing training outcomes between haptic and non-haptic simulation.
-
     \item \textbf{Audio Feedback}: Add cutting sounds synchronized with spindle speed and material for multi-modal feedback.
 \end{enumerate}
 
-%==============================================================================
 \section{Conclusion}
-%==============================================================================
 
 We have presented the design, implementation, and initial evaluation of a haptic lathe training simulator. The system successfully renders material-dependent cutting forces through a directly-driven handwheel interface, enabling users to experience realistic resistance during virtual machining operations.
 
-Key contributions include:
-
-\begin{enumerate}
-    \item A three-tier architecture separating visualization, communication, and real-time control
-    \item A damping-based force rendering algorithm that produces realistic cutting feel
-    \item Material differentiation through adjustable wall stiffness and yield force parameters
-    \item Safety features including crash detection and emergency stop functionality
-\end{enumerate}
+Key contributions include: (1) A three-tier architecture separating visualization, communication, and real-time control; (2) A damping-based force rendering algorithm that produces realistic cutting feel; (3) Material differentiation through adjustable wall stiffness and yield force parameters; (4) Safety features including crash detection and emergency stop functionality.
 
 The system demonstrates that effective haptic machining training can be achieved with modest hardware (total cost under \$60) while providing meaningful tactile feedback for skill development.
 
-%==============================================================================
-\section*{Acknowledgements}
-%======================================================
+\section*{Acknowledgment}
 
-AI systems used: Claude Opus 4.5 
+AI systems used: Claude Opus 4.5 was used to convert existing codebase documentation and project notes into a well formatted LaTeX final report. The prompt instructed the system to read the repository and the provided background document, produce detailed implementation sections describing the software and hardware (including equations and concept explanations), and insert explicit placeholders wherever required information was missing rather than inventing results. This use primarily improved report structure, formatting quality, and clarity of code and hardware descriptions, while keeping technical content constrained to what was already present in the codebase and project files.
 
-Prompt:
-"Understand the codebase and then make an engineering final project report in Latex , well formatted, describing the code and hardware implementation in detail with equations and concepts explained. Fill out the rest of the sections of the report (introduction, experimentation) with the information in the codebase or other files in the folder but do NOT make up information, instead make placeholders). Think if the content is logical. See '/Users/calebfarrelly/Downloads/HapticsProject/Report Materials/Checkpoints.docx' for background info on the project"
+Google Gemini was also selectively used to fix grammatical errors in this report and smooth out sentence structures. The AI was prompted ``proof read, dont change tone and content, make list of changes and i will implement them''.
 
-Claude Opus 4.5 was used to convert existing codebase documentation and project notes into a well formatted LaTeX final report. The prompt instructed the system to read the repository and the provided background document, produce detailed implementation sections describing the software and hardware (including equations and concept explanations), and insert explicit placeholders wherever required information was missing rather than inventing results. This use primarily improved report structure, formatting quality, and clarity of code and hardware descriptions, while keeping technical content constrained to what was already present in the codebase and project files.
-
-Google Gemini was also selectively used to fix grammatical errors in this report and smooth out sentence structures. The AI was prompted "proof read, dont change tone and content, make list of changes and i will implement them". 
-
-%==============================================================================
-\begin{thebibliography}{9}
-
-\begin{thebibliography}{99}
+\begin{thebibliography}{00}
 
 \bibitem{he2006haptic}
 X. He and Y. Chen, ``A Haptic Virtual Turning Operation System,'' in \textit{Proc. IEEE Int. Conf. on Mechatronics and Automation}, Luoyang, China, 2006, pp. 435--440.
@@ -687,53 +419,11 @@ K. Salisbury, F. Conti, and F. Barbagli, ``Haptic rendering: introductory concep
 A. Akshay, R. Raghavan, and S. K. Saha, ``Significance of Haptic Feedback in Learning Lathe Operating Skills,'' in \textit{Proc. IEEE Tenth Int. Conf. on Technology for Education (T4E)}, Chennai, India, 2018, pp. 112--119.
 
 \bibitem{hapkit}
-J. K. Salisbury, K. J. Kuchenbecker, and the Stanford Haptics Group, ``The Hapkit: A low-cost haptic device for education and research,'' Stanford University. [Online]. Available: \url{https://hapkit.stanford.edu}
+J. K. Salisbury, K. J. Kuchenbecker, and the Stanford Haptics Group, ``The Hapkit: A low-cost haptic device for education and research,'' Stanford University. [Online]. Available: https://hapkit.stanford.edu
 
 \bibitem{turninburnin}
-Turnin' and Burnin' Haptic Lathe Project, Lafayette College. [Online]. Available: \url{https://sites.lafayette.edu/turnin-and-burnin/}
+Turnin' and Burnin' Haptic Lathe Project, Lafayette College. [Online]. Available: https://sites.lafayette.edu/turnin-and-burnin/
 
 \end{thebibliography}
-
-
-\end{thebibliography}
-
-%==============================================================================
-\appendix
-\section{System Specifications Summary}
-%==============================================================================
-
-\begin{table}[H]
-\centering
-\caption{Complete system specifications.}
-\begin{tabular}{ll}
-\toprule
-\textbf{Parameter} & \textbf{Value} \\
-\midrule
-\multicolumn{2}{l}{\textit{Motor \& Encoder}} \\
-Motor Type & CQR37D Geared DC \\
-Gear Ratio & 30:1 \\
-Encoder Resolution & 64 CPR (motor), 1920 CPR (output) \\
-Maximum RPM & 150 RPM \\
-\\
-\multicolumn{2}{l}{\textit{Control System}} \\
-Microcontroller & Raspberry Pi Pico (RP2040) \\
-Control Loop Rate & 100 Hz \\
-Serial Baud Rate & 921,600 bps \\
-PWM Frequency & 1 kHz \\
-\\
-\multicolumn{2}{l}{\textit{Haptic Rendering}} \\
-Force Range & 0--100 N \\
-Damping Coefficient (base) & 2000 Ns/m \\
-Wall Stiffness Range & 50,000--200,000 N/m \\
-Handle Radius & 50 mm \\
-\\
-\multicolumn{2}{l}{\textit{GUI}} \\
-Resolution & 1280 $\times$ 720 pixels \\
-Frame Rate & 60 Hz \\
-Stock Dimensions & 4.5'' L $\times$ 1.25'' D \\
-Scale Factor & 60 pixels/inch \\
-\bottomrule
-\end{tabular}
-\end{table}
 
 \end{document}
