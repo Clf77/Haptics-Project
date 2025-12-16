@@ -10,6 +10,7 @@
 \usepackage{listings}
 \usepackage{tikz}
 \usepackage{url}
+\usepackage{float}
 \usetikzlibrary{shapes,arrows,positioning}
 
 % Code listing style
@@ -88,6 +89,13 @@ The haptic lathe simulator consists of three primary subsystems:
     \item \textbf{Control Bridge}: A Python-based communication layer that manages bidirectional data flow between the GUI and microcontroller while computing haptic forces.
 \end{enumerate}
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\linewidth]{image2.png}
+    \caption{Haptic Lathe Simulator Setup}
+    \label{fig:placeholder}
+\end{figure}
+
 \subsection{Project Scope}
 
 The presented work demonstrates the principles of machining with real-time force feedback to replicate the two primary control inputs of a conventional manual lathe: the X cross-slide and the Z carriage. The resultant device is a two-DOF haptic trainer featuring one directly-driven handwheel to ensure high-fidelity transmission of simulated forces, with the operator being able to rapidly switch between the two axes. By concentrating the design on a low-inertia, directly-coupled system, the device minimizes parasitic friction and backlash, which are critical design considerations in high-precision mechanical assemblies. The system computes and reflects realistic cutting forces and torques based on operational variables, allowing trainees to practice basic machining operations (e.g., facing, turning to a specified diameter) in a safe virtual environment.
@@ -121,24 +129,39 @@ where $K_c$ is the specific cutting force of the workpiece material (N/mm$^2$), 
 
 The system employs a three-tier architecture with clear separation of concerns. Fig.~\ref{fig:architecture} shows the data flow between components.
 
+% Preamble:
+% \usetikzlibrary{positioning}
+
 \begin{figure}[htbp]
 \centering
+\resizebox{\linewidth}{!}{%
 \begin{tikzpicture}[
-    node distance=1.5cm,
-    block/.style={rectangle, draw, fill=blue!20, text width=2.2cm, text centered, minimum height=1.2cm, font=\footnotesize},
-    arrow/.style={->, thick}
+  node distance=1.1cm and 1.1cm,
+  block/.style={
+    rectangle, draw, fill=blue!20,
+    text width=2.2cm, align=center,
+    minimum height=1.05cm, font=\footnotesize
+  },
+  arrow/.style={->, thick},
+  lab/.style={font=\scriptsize, fill=white, inner sep=1pt}
 ]
-    \node[block] (gui) {Processing GUI\\(Visual)};
-    \node[block, right=of gui] (bridge) {Python Bridge\\(Comm.)};
-    \node[block, right=of bridge] (pico) {RPi Pico\\(Control)};
-    \node[block, below=of pico] (motor) {CQR37D\\Motor};
 
-    \draw[arrow] (gui) -- node[above, font=\scriptsize] {TCP/IP} (bridge);
-    \draw[arrow] (bridge) -- node[above, font=\scriptsize] {Serial} (pico);
-    \draw[arrow] (pico) -- (motor);
-    \draw[arrow] (motor.west) -- ++(-0.8,0) |- node[left, near start, font=\scriptsize] {Position} (bridge.south);
+\node[block] (gui)    {Processing GUI\\(Visual)};
+\node[block, right=of gui]    (bridge) {Python Bridge\\(Comm.)};
+\node[block, right=of bridge] (pico)   {RPi Pico\\(Control)};
+\node[block, below=of pico]   (motor)  {CQR37D\\Motor};
 
-\end{tikzpicture}
+\draw[arrow] (gui.east)    -- node[lab, above] {TCP/IP} (bridge.west);
+\draw[arrow] (bridge.east) -- node[lab, above] {Serial} (pico.west);
+\draw[arrow] (pico.south)  -- (motor.north);
+
+% Feedback path: orthogonal into faces, label offset and masked
+\draw[arrow] (motor.west) -|
+  node[lab, pos=0.18, above, yshift=2pt] {Position}
+  (bridge.south);
+
+\end{tikzpicture}%
+}
 \caption{System architecture showing data flow between components.}
 \label{fig:architecture}
 \end{figure}
@@ -288,6 +311,36 @@ An IIR low-pass filter smooths the velocity estimate:
 \subsection{Virtual Wall Force Rendering}
 
 The haptic feedback algorithm implements a damping-based cutting force model inspired by the Hapkit framework.
+\subsection{Control Loop and Force Pipeline}
+
+Fig.~\ref{fig:forcepipeline} summarizes the haptic rendering pipeline executed each control cycle. The Pico runs a fixed-rate loop at 100~Hz. Encoder counts are converted to angle $\theta$, differentiated to estimate angular velocity $\omega$, filtered, and then mapped to a handle-space linear velocity $\dot{x}_{\text{filt}} = \omega_{\text{filt}} r_h$. Penetration depth $x_{\text{pen}}$ is computed relative to the current virtual wall location. The damping-based cutting force in (8) is then converted to motor torque (9) and mapped to PWM duty (10). Finally, direction and safety logic clamp output based on penetration limits and heartbeat timeout.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+  node distance=0.9cm,
+  block/.style={rectangle, draw, fill=blue!15, text width=7.0cm, minimum height=0.75cm, align=center, font=\footnotesize},
+  arrow/.style={->, thick}
+]
+\node[block] (enc) {Encoder counts $\rightarrow$ angle $\theta$ (Eq.~\ref{eq:position})};
+\node[block, below=of enc] (vel) {Differentiate $\theta$ $\rightarrow$ $\omega$ (Eq.~\ref{eq:velocity}); low-pass filter (Eq.~\ref{eq:velocity_filter})};
+\node[block, below=of vel] (handle) {Map to handle velocity: $\dot{x}_{\text{filt}}=\omega_{\text{filt}}\cdot \frac{2\pi}{60}\cdot r_h$};
+\node[block, below=of handle] (pen) {Penetration depth $x_{\text{pen}}$ (Eq.~\ref{eq:penetration}) and engagement state};
+\node[block, below=of pen] (force) {Compute force $F$ (Eq.~\ref{eq:damping_force}) with material scaling + yield threshold};
+\node[block, below=of force] (pwm) {Torque + PWM mapping (Eq.~\ref{eq:motor_torque}, Eq.~\ref{eq:hapkit_duty}) + safety clamps};
+\draw[arrow] (enc) -- (vel);
+\draw[arrow] (vel) -- (handle);
+\draw[arrow] (handle) -- (pen);
+\draw[arrow] (pen) -- (force);
+\draw[arrow] (force) -- (pwm);
+\end{tikzpicture}
+\caption{Force rendering pipeline executed each Pico control cycle.}
+\label{fig:forcepipeline}
+\end{figure}
+
+\subsubsection{Parameterization Used in This Prototype}
+The prototype used the following fixed parameters: handle radius $r_h = 0.05$~m; base damping $c_{\text{base}} = 2000$~Ns/m; depth scaling saturation $d_{\text{scale}} = \min(x_{\text{pen}}/0.005,\,2.0)$; maximum penetration of 200$^\circ$; and a 5~s heartbeat timeout. Material differences were implemented by scaling the effective damping via the yield force $F_{\text{wall}}$ (Table~\ref{tab:materials}) as $c_{\text{damping}} = c_{\text{base}} \cdot (F_{\text{wall}}/50)$, producing a 4:1 spread between Delrin and Inconel.
+
 
 \subsubsection{Penetration Detection}
 
@@ -348,11 +401,14 @@ The 4:1 ratio between softest (Delrin) and hardest (Inconel) materials provides 
 
 The Processing-based GUI provides: (1) Virtual Lathe Workspace with real-time rendering of stock geometry, tool position, and material removal; (2) Live Readouts of X/Z position, tool load, and cutting parameters; (3) Control Panel for material selection, axis selection, and reset/zero functions; and (4) Connection Status with visual indicator for bridge connectivity.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centerline{\includegraphics[width=\columnwidth]{image.png}}
 \caption{Virtual Environment showing the lathe workspace.}
 \label{fig:gui}
 \end{figure}
+
+
+
 
 \subsubsection{Collision Detection}
 
@@ -377,10 +433,6 @@ Cutting vibration frequency is mapped from surface feet per minute (SFM):
 
 This 1:1 mapping (10 SFM = 10 Hz) provides intuitive correspondence between spindle speed and haptic vibration.
 
-\subsection{Safety Features}
-
-The system implements multiple safety layers: Emergency Stop (spacebar triggers immediate motor stop), Symmetric Coast Mode (both H-bridge inputs HIGH for free spin), Position Limits (maximum penetration of 200$^\circ$ prevents pass-through), Heartbeat Monitoring (5-second timeout triggers safety stop), and Crash Detection (tool contact at 0 RPM triggers visual crash overlay).
-
 \section{Results}
 
 \subsection{Design Decisions}
@@ -403,46 +455,67 @@ Several key design decisions shaped the final system:
 
 \subsection{User Study}
 
-A formative user study was conducted during a public demonstration of the haptic lathe simulator to evaluate perceived realism, effectiveness of haptic feedback, and its impact on users' understanding of lathe cutting dynamics. The study was intended as an exploratory assessment rather than a controlled experiment, focusing on qualitative and subjective user feedback.
+A formative user study was conducted during a public demonstration of the haptic lathe simulator to evaluate perceived realism, usefulness of the haptic cues, and overall learning impact. The study was exploratory (not a controlled experiment) and focused on subjective perception and qualitative feedback.
 
-Participants interacted freely with the simulator and were encouraged to explore different materials, cutting depths, and operating conditions. After completing the interaction, participants completed a short questionnaire consisting of Likert-scale statements (1--10) and open-ended feedback.
+\subsubsection{Procedure}
+Participants interacted freely with the simulator and were encouraged to (i) toggle between axes, (ii) try multiple materials, and (iii) vary depth of cut and feed behavior to observe changes in resistance and vibration. After the interaction, participants completed a short questionnaire with 10-point Likert items (1 = strongly disagree, 10 = strongly agree) and optional open-ended comments. Participants also answered whether they felt more confident operating a lathe afterward (Yes/No).
 
 \subsubsection{Participants}
-
-A total of ten participants completed the study. The group included users with prior lathe experience as well as complete novices: 8 participants reported prior experience operating a lathe, and 3 participants had no prior lathe experience.
-
-This mix allowed us to capture feedback from both experienced users familiar with real machining and novices encountering lathe dynamics for the first time.
+Ten participants completed the questionnaire ($N=10$). Seven reported prior lathe experience, two reported no prior lathe experience, and one left the question blank. This mix allowed feedback from both experienced users (realism expectations) and novices (interpretability of cues).
 
 \subsubsection{Measures}
-
-Participants rated their agreement with the following statements on a 10-point Likert scale (1 = strongly disagree, 10 = strongly agree): The simulation was realistic; The materials were differentiable from one another; Force changes communicated tool engagement; I could tell when I was doing something ``wrong'' based on feel alone; The visual and haptic cues were synchronized; The simulator helped me understand lathe cutting dynamics. Participants were also asked whether they felt more confident operating a lathe after using the simulator (Yes/No).
+Participants rated the following statements: (1) The simulation was realistic; (2) The materials were differentiable; (3) Force changes communicate tool engagement; (4) I could tell when I was doing something ``wrong'' based on feel alone; (5) The visual and haptic cues were synchronized; (6) The simulator helped me understand lathe cutting dynamics. Participants also reported whether they felt more confident operating a lathe after use.
 
 \subsubsection{Results}
-
-Table~\ref{tab:results} summarizes the user study results. All participants reported increased confidence in operating a lathe after using the simulator.
+Table~\ref{tab:userstudy} summarizes the Likert responses. Overall scores were high across all dimensions, with particularly strong ratings for visual--haptic synchronization and understanding of cutting dynamics. All participants reported increased confidence operating a lathe after using the simulator (10/10 ``Yes'').
 
 \begin{table}[htbp]
-\caption{User Study Results (n=10)}
+\caption{User study Likert responses (1--10).}
 \begin{center}
-\begin{tabular}{|l|c|}
+\begin{tabular}{lccc}
 \hline
-\textbf{Measure} & \textbf{Mean Score} \\
+\textbf{Statement} & \textbf{Mean} & \textbf{SD} & \textbf{Range} \\
 \hline
-Perceived realism & 8.9 / 10 \\
-Material differentiation & 9.0 / 10 \\
-Force communicates engagement & 9.0 / 10 \\
-Error detection through haptics & 8.3 / 10 \\
-Visual--haptic synchronization & 9.9 / 10 \\
-Understanding of dynamics & 9.8 / 10 \\
+Simulation was realistic & 8.9 & 0.9 & 8--10 \\
+Materials differentiable & 9.0 & 1.1 & 7--10 \\
+Force indicates engagement & 9.0 & 1.6 & 6--10 \\
+Could detect ``wrong'' by feel & 8.4 & 1.6 & 5--10 \\
+Visual--haptic synchronized & 9.9 & 0.3 & 9--10 \\
+Helped understand cutting dynamics & 9.8 & 0.6 & 8--10 \\
 \hline
 \end{tabular}
-\label{tab:results}
+\label{tab:userstudy}
 \end{center}
 \end{table}
 
-Qualitative feedback further reinforced these results. Participants frequently commented on the realism of the cutting feel and the clarity of force changes with depth of cut. Experienced users noted that the simulator closely matched their expectations of lathe behavior, particularly when engaging the tool or increasing cutting aggressiveness. Novice users reported that the haptic feedback helped them intuitively understand when a cut was too aggressive without relying solely on visual cues.
+\begin{table}[htbp]
+\caption{User study means by experience group (Likert 1--10).}
+\begin{center}
+\begin{tabular}{lcc}
+\hline
+\textbf{Statement} & \textbf{Experienced (n=7)} & \textbf{Novice (n=2)} \\
+\hline
+Simulation was realistic & 8.6 & 9.5 \\
+Materials differentiable & 9.1 & 9.0 \\
+Force indicates engagement & 9.1 & 10.0 \\
+Could detect ``wrong'' by feel & 8.1 & 8.5 \\
+Visual--haptic synchronized & 9.9 & 9.5 \\
+Helped understand cutting dynamics & 9.7 & 10.0 \\
+\hline
+\end{tabular}
+\label{tab:userstudy_groups}
+\end{center}
+\end{table}
 
-Minor usability feedback focused on physical setup rather than haptic rendering. For example, one participant noted that suction cups used to secure the device occasionally distracted from immersion, suggesting opportunities for improved mechanical mounting in future iterations.
+\noindent
+Novice users tended to rate tool engagement and learning impact slightly higher, while experienced users provided more critical realism scores, consistent with expert calibration to real machine feel. Although the novice sample is small, this split suggests the simulator is interpretable for first-time learners while remaining recognizable to users with prior lathe exposure.
+
+\subsubsection{Qualitative Feedback}
+Open-ended comments highlighted (i) perceived realism of resistance changes with depth of cut (including experienced-user agreement that it ``matched the feel''), and (ii) the usefulness of haptic cues for identifying aggressive cutting without relying on visuals. One participant noted that the suction-cup mounting reduced immersion, suggesting improved fixturing (e.g., clamps or a heavier base) for future iterations.
+
+
+\subsubsection{Study Limitations}
+This evaluation was conducted in an uncontrolled demo setting with a small sample size, so results should be interpreted as formative. Participants had different exposure times and explored different subsets of operations. A controlled follow-on study could standardize tasks (e.g., facing to a target diameter under fixed spindle speed), compare conditions (haptics on/off), and measure objective performance (time-to-completion, overshoot, surface error, and number of ``crash'' events).
 
 
 \subsection{Discussion}
@@ -469,11 +542,11 @@ Key contributions include: (1) A three-tier architecture separating visualizatio
 
 The system demonstrates that effective haptic machining training can be achieved with modest hardware (total cost under \$60) while providing meaningful tactile feedback for skill development.
 
-\section*{Acknowledgment}
+\section*{Acknowledgments}
 
 AI systems used: Claude Opus 4.5 was used to convert existing codebase documentation and project notes into a well formatted LaTeX final report. The prompt instructed the system to read the repository and the provided background document, produce detailed implementation sections describing the software and hardware (including equations and concept explanations), and insert explicit placeholders wherever required information was missing rather than inventing results. This use primarily improved report structure, formatting quality, and clarity of code and hardware descriptions, while keeping technical content constrained to what was already present in the codebase and project files.
 
-Google Gemini was also selectively used to fix grammatical errors in this report and smooth out sentence structures. The AI was prompted ``proof read, dont change tone and content, make list of changes and i will implement them''.
+Google Gemini was also selectively used to fix grammatical errors in this report and smooth out sentence structures. The AI was prompted ``proof read, dont change tone and content, make list of changes and I will implement them''.
 
 \begin{thebibliography}{00}
 
